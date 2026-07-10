@@ -8,7 +8,7 @@ config_version=5
 
 config/name="Townling"
 config/description="A privacy-first, ad-free financial life-simulation game for children."
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/diorama.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
 

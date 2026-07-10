@@ -1,0 +1,51 @@
+[gd_scene load_steps=3 format=3 uid="uid://c0townlingdiorama"]
+
+[ext_resource type="Script" path="res://scripts/diorama.gd" id="1_dio"]
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 1
+background_color = Color(0.796078, 0.901961, 0.937255, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+
+[node name="Diorama" type="Node3D"]
+script = ExtResource("1_dio")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+shadow_enabled = true
+light_energy = 1.2
+
+[node name="Camera" type="Camera3D" parent="."]
+projection = 1
+current = true
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="ConfigRequest" type="HTTPRequest" parent="."]
+
+[node name="HealthRequest" type="HTTPRequest" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Banner" type="VBoxContainer" parent="UI"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 360.0
+offset_bottom = 100.0
+theme_override_constants/separation = 4
+
+[node name="Title" type="Label" parent="UI/Banner"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.172549, 0.172549, 0.164706, 1)
+theme_override_font_sizes/font_size = 44
+text = "Townling"
+
+[node name="BackendStatus" type="Label" parent="UI/Banner"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478431, 0.329412, 0.062745, 1)
+theme_override_font_sizes/font_size = 20
+text = "backend: …"

@@ -29,3 +29,7 @@ game/assets/**/obj/
 .idea/
 .vscode/
 *.swp
+
+# Offscreen preview capture (--shot)
+game/shot.png
+game/shot.png.import
