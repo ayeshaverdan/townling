@@ -73,7 +73,7 @@ One simulation engine, three presentation layers. The economic model underneath 
 
 ### The city diorama hub
 
-The entire game state lives on one fixed, charming, single-screen illustrated town — a diorama, deliberately **not** a scrollable open map. Navigation is not the game; money decisions are. Each building is a large tappable landmark:
+The entire game state lives on one fixed, charming, single-screen town — a diorama, deliberately **not** a scrollable open map. *(Rendered as low-poly 3D on a fixed isometric camera — see the visual-direction update in §18.)* Navigation is not the game; money decisions are. Each building is a large tappable landmark:
 
 **Home** (lifestyle, decorating, rest) · **Workplace** (shifts, promotions) · **Bank** (accounts, savings, later loans and investments) · **School/Library** (skill classes) · **Shop** (groceries, purchases, lifestyle) · **Notice Board** (gigs and missions) · and in Band C, an **investment floor** at the bank and a **business district**.
 
@@ -341,7 +341,9 @@ Backend implications: minimal-data schema, parental consent flows, no third-part
 
 ### Client: Godot Engine, GDScript
 
-**Decision: Godot** (open source, no revenue cut, lightweight, excellent 2D) with **GDScript** as the primary language. The game is architecturally a 2D hub-and-card UI experience — exactly Godot's sweet spot.
+**Decision: Godot** (open source, no revenue cut, lightweight, strong 2D *and* low-poly 3D) with **GDScript** as the primary language. The game is architecturally a hub-and-card UI experience — exactly Godot's sweet spot.
+
+**Visual-direction update (July 2026): low-poly 3D on a fixed isometric camera (2.5D), not hand-illustrated 2D sprites.** The diorama and characters are rendered from low-poly 3D models — starting with KayKit *City Builder Bits* and *Adventurers* (both CC0) — viewed through a fixed isometric camera, superseding the original "hand-illustrated 2D storybook" plan (§5). *Why:* ready-made CC0 3D kits give a cohesive, animatable, extensible town far faster than commissioning 2D art, and Godot handles low-poly 3D well. **What does not change:** the hub-and-card interaction model, one-tap-deep navigation, the single-screen fixed diorama (still deliberately not a scrollable open map), the storybook *palette* and warmth, and the one-decision-per-screen UX laws — only the render pipeline is 3D. The `gl_compatibility` renderer (OpenGL ES 3 / WebGL 2) is retained deliberately: it is the most compatible target for the HTML5 web export (fun-test) and low-end mobile, and low-poly scenes run comfortably on it. **Placeholder caveat:** the *Adventurers* pack is medieval-fantasy with weapons (knights, swords, mages) — it conflicts with the modern, kid-safe setting and its professions (Baker, Vet, Coder, Teacher, Shopkeeper, Builder; spec §5) and is used only as a temporary stand-in. A modern, profession-appropriate, weapon-free character set must replace it before any external playtest that judges art. The *City Builder* pack (modern buildings, cars, streets) fits the setting and is a keeper.
 
 **The deciding factor is the development workflow.** Development will be driven through **Claude Code** on macOS, which operates by reading/writing repository files and running terminal commands. Godot is built around that model: scripts (`.gd`), scenes (`.tscn`), and project config (`project.godot`) are all human-readable text files, so the AI-assisted workflow can create scenes, wire nodes, write logic, edit configuration, and run headless builds/exports (`godot --headless --export-release ...`) end to end. GDScript is chosen over Godot's C# variant for the tightest loop with Claude Code — concise, well-represented in training data, seamlessly integrated with the scene system — though C# remains available if ever needed.
 

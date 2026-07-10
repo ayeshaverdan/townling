@@ -18,6 +18,13 @@ game/.godot/
 game/build/
 export.log
 
+# Redundant KayKit source formats — keep only glTF in git (see game/assets/README.md).
+# These stay on disk locally; they're just not versioned.
+game/assets/**/fbx/
+game/assets/**/fbx (unity)/
+game/assets/**/fbx(unity)/
+game/assets/**/obj/
+
 # --- Editors ---
 .idea/
 .vscode/
