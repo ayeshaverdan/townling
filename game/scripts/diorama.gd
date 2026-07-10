@@ -79,9 +79,12 @@ func _ready() -> void:
 
 
 func _capture_and_quit() -> void:
-	# Open a building screen so the preview exercises it.
-	if _picks.size() > 0:
-		_open_screen(0)
+	# --zoom frames a single building for design review; default is the town.
+	if "--zoom" in OS.get_cmdline_args():
+		var focus := Vector3(0.0, 1.0, 1.4)  # the Bank lot
+		camera.size = 7.0
+		camera.position = focus + Vector3(9.0, 10.0, 9.0)
+		camera.look_at(focus, Vector3.UP)
 	for _i in range(6):
 		await get_tree().process_frame
 	var image := get_viewport().get_texture().get_image()
@@ -127,6 +130,11 @@ func _build_town() -> void:
 		)
 		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
 
+		# Per-landmark detailing (one category at a time).
+		var origin := Vector3(cell.x * TILE, 0.0, cell.y * TILE)
+		if lm["name"] == "Bank":
+			_decorate_bank(origin)
+
 	_place("%scar_sedan.gltf" % CITY, 1, ROAD_ROW, 90.0)
 	_place("%scar_taxi.gltf" % CITY, 3, ROAD_ROW, -90.0)
 	_place("%sbush.gltf" % CITY, 2, 1)
@@ -146,6 +154,106 @@ func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
 	inst.rotation.y = deg_to_rad(rot_deg)
 	world.add_child(inst)
 	return inst
+
+
+# --- Composition helpers (world-space) -------------------------------------
+
+## Instance a kit asset at a world position, rotated about Y and scaled.
+func _spawn_at(path: String, pos: Vector3, rot_deg: float = 0.0, scale: float = 1.0) -> Node3D:
+	var packed: Resource = load(path)
+	if packed == null:
+		push_warning("Missing asset: %s" % path)
+		return null
+	var inst: Node3D = packed.instantiate()
+	inst.position = pos
+	inst.rotation.y = deg_to_rad(rot_deg)
+	inst.scale = Vector3.ONE * scale
+	world.add_child(inst)
+	return inst
+
+
+## A soft matte coloured box primitive (for signage / trunks).
+func _box(size: Vector3, color: Color, pos: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.95
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	mi.material_override = mat
+	mi.position = pos
+	world.add_child(mi)
+	return mi
+
+
+## A low-poly tree: slim brown trunk + a scaled bush canopy, styled to the kit.
+func _tree(pos: Vector3, size: float = 2.0) -> void:
+	_box(Vector3(0.1, 0.45, 0.1), Color("6b4a2a"), pos + Vector3(0, 0.22, 0))
+	_spawn_at("%sbush.gltf" % CITY, pos + Vector3(0, 0.35, 0), 0.0, size)
+
+
+## A standing sign: post + coloured panel + billboard text.
+func _sign(pos: Vector3, text: String, panel_color: Color, face_deg: float) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	root.rotation.y = deg_to_rad(face_deg)
+	world.add_child(root)
+
+	var post := MeshInstance3D.new()
+	var post_mesh := BoxMesh.new()
+	post_mesh.size = Vector3(0.09, 1.35, 0.09)
+	post.mesh = post_mesh
+	var post_mat := StandardMaterial3D.new()
+	post_mat.albedo_color = Color("8a8a8a")
+	post.material_override = post_mat
+	post.position = Vector3(0, 0.675, 0)
+	root.add_child(post)
+
+	var panel := MeshInstance3D.new()
+	var panel_mesh := BoxMesh.new()
+	panel_mesh.size = Vector3(1.35, 0.6, 0.08)
+	panel.mesh = panel_mesh
+	var panel_mat := StandardMaterial3D.new()
+	panel_mat.albedo_color = panel_color
+	panel_mat.roughness = 0.9
+	panel.material_override = panel_mat
+	panel.position = Vector3(0, 1.55, 0)
+	root.add_child(panel)
+
+	var label := Label3D.new()
+	label.text = text
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.pixel_size = 0.005
+	label.font_size = 90
+	label.outline_size = 10
+	label.modulate = Color("ffffff")
+	label.outline_modulate = Color(0.06, 0.1, 0.24, 1.0)
+	label.position = Vector3(0, 1.55, 0.06)
+	root.add_child(label)
+
+
+## Detail the Bank lot: hedges, trees, a BANK sign, an ATM, street furniture.
+## Front faces the road (+Z). Kept inside the lot so it reads at town scale.
+func _decorate_bank(origin: Vector3) -> void:
+	# Neat trimmed hedge along the frontage, with a gap for the entrance path.
+	for x in [-0.8, -0.5, 0.5, 0.8]:
+		_spawn_at("%sbush.gltf" % CITY, origin + Vector3(x, 0, 1.1), 0.0, 1.1)
+	# Two trees framing the plot at the front corners, clear of the sign.
+	_tree(origin + Vector3(-1.35, 0, 1.6))
+	_tree(origin + Vector3(1.35, 0, 2.4))
+	# Prominent BANK sign on the entrance path, facing the camera.
+	_sign(origin + Vector3(0.0, 0, 1.9), "BANK", Color("3a4a7a"), 45.0)
+	# An ATM: dark cabinet + a little blue screen, beside the entrance.
+	_box(Vector3(0.34, 0.72, 0.28), Color("343a45"), origin + Vector3(0.75, 0.36, 1.3))
+	_box(Vector3(0.22, 0.16, 0.06), Color("6aa6d6"), origin + Vector3(0.75, 0.5, 1.16))
+	# Street furniture, tucked to the sides.
+	_spawn_at("%sbench.gltf" % CITY, origin + Vector3(-1.3, 0, 2.5), 90.0)
+	_spawn_at("%sstreetlight.gltf" % CITY, origin + Vector3(1.5, 0, 1.0), 180.0)
+	_spawn_at("%sfirehydrant.gltf" % CITY, origin + Vector3(-1.45, 0, 1.1))
+	# A customer's car parked at the curb.
+	_spawn_at("%scar_sedan.gltf" % CITY, origin + Vector3(0.1, 0, 3.05), 90.0)
 
 
 func _add_label(building: Node3D, text: String, height: float) -> void:
