@@ -103,15 +103,15 @@ func _setup_light() -> void:
 	# Cosy warm afternoon, matching the reference: golden key light, soft
 	# shadows, a warm ambient fill so pastels stay soft, muted blue-grey sky.
 	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
-	sun.light_energy = 1.0
-	sun.light_color = Color(1.0, 0.9, 0.74)
+	sun.light_energy = 1.15
+	sun.light_color = Color(1.0, 0.89, 0.72)
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.2
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
-	env.background_color = Color("b3c4cc")        # soft muted blue-grey
-	env.ambient_light_color = Color(1.0, 0.95, 0.86)  # warm fill
-	env.ambient_light_energy = 0.45
+	env.background_color = Color("b3c4cc")            # soft muted blue-grey
+	env.ambient_light_color = Color(1.0, 0.93, 0.82)  # warm fill
+	env.ambient_light_energy = 0.28                   # lower fill -> deeper, soothing shadows
 
 
 func _build_town() -> void:
