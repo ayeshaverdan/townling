@@ -11,17 +11,17 @@ extends Node3D
 const CITY := "res://assets/city/Assets/gltf/"
 const TILE := 2.0  # world units per grid cell
 
-## The six launch landmarks. Each: display name, building mesh, grid cell, and
-## a Townling-palette skin (a luminance-colorized copy of the KayKit atlas in
-## assets/city/townling/ — keeps windows/roofs/shopfronts, recolours the hue).
-const SKINS := "res://assets/city/townling/"
+## The six launch landmarks. Each: display name, building mesh, grid cell.
+## Buildings keep their original KayKit colours (varied walls, white roofs,
+## shopfronts); identity comes from the floating label. Distinct silhouettes
+## /signage per landmark are a later pass.
 const LANDMARKS := [
-	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0), "skin": "bank"},
-	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0), "skin": "school"},
-	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0), "skin": "workplace"},
-	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4), "skin": "home"},
-	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4), "skin": "shop"},
-	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4), "skin": "noticeboard"},
+	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0)},
+	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0)},
+	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0)},
+	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4)},
+	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4)},
+	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4)},
 ]
 ## Mesh heights (world units) for label placement, from the glTF bounds.
 const HEIGHTS := {
@@ -92,12 +92,11 @@ func _build_town() -> void:
 			else:
 				_place("%sbase.gltf" % CITY, col, row)
 
-	# Landmarks: recoloured skin + floating label.
+	# Landmarks: original colours + floating label.
 	for lm in LANDMARKS:
 		var cell: Vector2i = lm["cell"]
 		var inst := _place("%s%s.gltf" % [CITY, lm["mesh"]], cell.x, cell.y)
 		if inst:
-			_skin(inst, "%s%s.png" % [SKINS, lm["skin"]])
 			_add_label(inst, lm["name"], HEIGHTS.get(lm["mesh"], 3.0))
 
 	# A little life on the street and lots.
@@ -121,32 +120,6 @@ func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
 	inst.rotation.y = deg_to_rad(rot_deg)
 	world.add_child(inst)
 	return inst
-
-
-## Re-skin every mesh surface under `node` with a colorized atlas texture.
-## Keeps the model's UVs (so windows/roofs/shopfronts stay), swaps the palette.
-func _skin(node: Node, texture_path: String) -> void:
-	var tex: Texture2D = load(texture_path)
-	if tex == null:
-		push_warning("Missing skin: %s" % texture_path)
-		return
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = tex
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	mat.roughness = 0.95
-	mat.metallic = 0.0
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	for mi in _mesh_instances(node):
-		mi.material_override = mat
-
-
-func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
-	var out: Array[MeshInstance3D] = []
-	if node is MeshInstance3D:
-		out.append(node)
-	for child in node.get_children():
-		out.append_array(_mesh_instances(child))
-	return out
 
 
 ## Float a billboarded name label just above a placed building's roof.
