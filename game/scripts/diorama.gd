@@ -1,28 +1,27 @@
 extends Node3D
-## First isometric town diorama (design doc §5, §18 visual-direction update).
+## Townling town diorama (design doc §5, §18 visual-direction update).
 ##
-## Low-poly 3D on a fixed orthographic (isometric) camera. Buildings, roads and
-## props are KayKit City Builder Bits tiles — every tile is a 2x2 unit,
-## origin-centred, sitting on y=0 — placed procedurally on a grid. This is a
-## static first look at the 2.5D direction; interaction/UI come later.
+## Low-poly 3D on a fixed orthographic (isometric) camera. The six Band-B
+## landmark buildings (spec §5 / design doc §5) are placed on a 2x2-unit grid
+## from KayKit City Builder tiles, each recoloured toward the Townling palette
+## and captioned with a floating label. Soft lighting for a storybook feel.
 ##
-## The backend health check from the bootstrap is retained as an overlay, so the
-## client -> server path (design doc §18) still proves out on this scene.
+## The backend health check from the bootstrap is retained as a UI overlay.
 
 const CITY := "res://assets/city/Assets/gltf/"
 const TILE := 2.0  # world units per grid cell
 
-## Grid layout. Keys are Vector2i(col, row); value is the building mesh name.
-## Empty cells become ground; row 2 is the street.
-const BUILDINGS := {
-	Vector2i(0, 0): "building_C",
-	Vector2i(1, 0): "building_D",
-	Vector2i(3, 0): "building_G",
-	Vector2i(4, 0): "building_H",
-	Vector2i(0, 4): "building_E",
-	Vector2i(2, 4): "building_B",
-	Vector2i(4, 4): "building_F",
-}
+## The six launch landmarks. Each: display name, building mesh, grid cell,
+## and a Townling-palette wall colour. Layout: two rows of three facing a
+## central street.
+const LANDMARKS := [
+	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0), "color": Color("aec3e8")},
+	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0), "color": Color("ebc985")},
+	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0), "color": Color("e9a97e")},
+	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4), "color": Color("cfe3c4")},
+	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4), "color": Color("f0a9a0")},
+	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4), "color": Color("c9aee4")},
+]
 const COLS := 5
 const ROWS := 5
 const ROAD_ROW := 2
@@ -43,7 +42,6 @@ func _ready() -> void:
 	_build_town()
 	_setup_camera()
 
-	# Offscreen capture path for previews/CI (inert unless --shot is passed).
 	if "--shot" in OS.get_cmdline_args():
 		_capture_and_quit()
 		return
@@ -54,7 +52,6 @@ func _ready() -> void:
 
 
 func _capture_and_quit() -> void:
-	# Let a few frames render so meshes/lighting are present, then save.
 	for _i in range(6):
 		await get_tree().process_frame
 	var image := get_viewport().get_texture().get_image()
@@ -65,22 +62,39 @@ func _capture_and_quit() -> void:
 # --- Scene construction ----------------------------------------------------
 
 func _setup_light() -> void:
+	# Soft, warm key light with a well-lit ambient fill so shadows stay gentle.
 	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
+	sun.light_energy = 0.6
+	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.shadow_enabled = true
+	sun.shadow_blur = 2.0
 
 
 func _build_town() -> void:
+	var landmark_cells := {}
+	for lm in LANDMARKS:
+		landmark_cells[lm["cell"]] = lm
+
+	# Ground + street first.
 	for row in ROWS:
 		for col in COLS:
 			var cell := Vector2i(col, row)
-			if BUILDINGS.has(cell):
-				_place("%s%s.gltf" % [CITY, BUILDINGS[cell]], col, row)
-			elif row == ROAD_ROW:
-				# road_straight runs along Z by default; rotate to run along X.
+			if landmark_cells.has(cell):
+				continue
+			if row == ROAD_ROW:
 				_place("%sroad_straight.gltf" % CITY, col, row, 90.0)
 			else:
 				_place("%sbase.gltf" % CITY, col, row)
 
-	# A little life on the street and the lots.
+	# Landmarks, coloured and labelled.
+	for lm in LANDMARKS:
+		var cell: Vector2i = lm["cell"]
+		var inst := _place("%s%s.gltf" % [CITY, lm["mesh"]], cell.x, cell.y)
+		if inst:
+			_tint(inst, lm["color"])
+			_add_label(inst, lm["name"])
+
+	# A little life on the street and lots.
 	_place("%scar_sedan.gltf" % CITY, 1, ROAD_ROW, 90.0)
 	_place("%scar_taxi.gltf" % CITY, 3, ROAD_ROW, -90.0)
 	_place("%sbush.gltf" % CITY, 2, 1)
@@ -91,25 +105,57 @@ func _build_town() -> void:
 
 
 ## Instance a tile at grid (col, row), optionally rotated about Y (degrees).
-func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> void:
+func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
 	var packed: Resource = load(path)
 	if packed == null:
 		push_warning("Missing asset: %s" % path)
-		return
+		return null
 	var inst: Node3D = packed.instantiate()
 	inst.position = Vector3(col * TILE, 0.0, row * TILE)
 	inst.rotation.y = deg_to_rad(rot_deg)
 	world.add_child(inst)
+	return inst
+
+
+## Recolour every mesh surface under `node` with a soft matte Townling colour.
+func _tint(node: Node, color: Color) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.95
+	mat.metallic = 0.0
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	for mi in _mesh_instances(node):
+		mi.material_override = mat
+
+
+func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	if node is MeshInstance3D:
+		out.append(node)
+	for child in node.get_children():
+		out.append_array(_mesh_instances(child))
+	return out
+
+
+## Float a billboarded name label above a placed building.
+func _add_label(building: Node3D, text: String) -> void:
+	var label := Label3D.new()
+	label.text = text
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.pixel_size = 0.006
+	label.font_size = 48
+	label.outline_size = 8
+	label.modulate = Color("2c2c2a")
+	label.outline_modulate = Color(1, 1, 1, 0.95)
+	label.position = Vector3(0.0, 3.4, 0.0)
+	building.add_child(label)
 
 
 func _setup_camera() -> void:
-	# Centre of the grid footprint; lift the aim point so the block sits
-	# vertically centred in the tall portrait frame rather than low.
 	var target := Vector3((COLS - 1) * TILE * 0.5, 3.0, (ROWS - 1) * TILE * 0.5)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
-	camera.size = 13.0  # tighter framing → more presence
-	# Classic isometric vantage: up and off one corner, looking at the centre.
+	camera.size = 13.0
 	camera.position = target + Vector3(14.0, 15.0, 14.0)
 	camera.look_at(target, Vector3.UP)
 
