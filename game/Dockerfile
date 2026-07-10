@@ -28,4 +28,7 @@ RUN mkdir -p build \
 FROM nginx:1.27-alpine AS serve
 COPY --from=export /src/build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Runtime config generator: writes /config.json from $TOWNLING_API_BASE at start.
+COPY docker-entrypoint.d/40-townling-config.sh /docker-entrypoint.d/40-townling-config.sh
+RUN chmod +x /docker-entrypoint.d/40-townling-config.sh
 EXPOSE 80

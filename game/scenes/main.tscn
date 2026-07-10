@@ -61,4 +61,6 @@ theme_override_font_sizes/font_size = 20
 text = "backend: …"
 horizontal_alignment = 1
 
+[node name="ConfigRequest" type="HTTPRequest" parent="."]
+
 [node name="HealthRequest" type="HTTPRequest" parent="."]

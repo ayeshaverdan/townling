@@ -32,6 +32,10 @@ services:
         GODOT_VERSION: ${GODOT_VERSION:-4.4.1}
     image: townling-game
     container_name: townling-game
+    environment:
+      # Backend URL the web client calls. Written into /config.json at startup,
+      # so repointing to another environment needs no rebuild.
+      TOWNLING_API_BASE: ${TOWNLING_API_BASE:-http://localhost:8000}
     ports:
       - "8080:80"
     depends_on:
