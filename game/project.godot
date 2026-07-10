@@ -1,0 +1,27 @@
+; Townling game client — Godot 4 project.
+; A 2D hub-and-card UI game (design doc §18). Portrait, mobile-first.
+; Rendered with GL Compatibility so the HTML5 web export runs everywhere.
+
+config_version=5
+
+[application]
+
+config/name="Townling"
+config/description="A privacy-first, ad-free financial life-simulation game for children."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.968627, 0.964706, 0.94902, 1)

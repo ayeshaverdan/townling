@@ -1,0 +1,24 @@
+# --- OS ---
+.DS_Store
+
+# --- Env ---
+.env
+
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+.venv/
+db.sqlite3
+backend/staticfiles/
+.pytest_cache/
+.ruff_cache/
+
+# --- Godot / game ---
+game/.godot/
+game/build/
+export.log
+
+# --- Editors ---
+.idea/
+.vscode/
+*.swp

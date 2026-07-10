@@ -1,0 +1,38 @@
+# Townling local stack. `make up` builds and runs everything.
+#
+#   backend  -> Django + DRF (SQLite) on :8000
+#   game     -> Godot HTML5 export served by nginx on :8080
+
+services:
+  backend:
+    build: ./backend
+    image: townling-backend
+    container_name: townling-backend
+    env_file:
+      - .env
+    environment:
+      # Keep the SQLite file on the mounted volume so it survives rebuilds.
+      DJANGO_DB_PATH: /app/db.sqlite3
+    ports:
+      - "8000:8000"
+    volumes:
+      # Bind-mount source for hot reload; the venv lives at /opt/venv (unshadowed).
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health/').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  game:
+    build:
+      context: ./game
+      args:
+        GODOT_VERSION: ${GODOT_VERSION:-4.4.1}
+    image: townling-game
+    container_name: townling-game
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend

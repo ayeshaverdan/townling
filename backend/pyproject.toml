@@ -1,0 +1,28 @@
+[project]
+name = "townling-backend"
+version = "0.1.0"
+description = "Townling thin backend: accounts, consent, content manifest delivery, digests, challenge aggregation."
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.2,<6.0",
+    "djangorestframework>=3.16,<4.0",
+    "django-cors-headers>=4.9,<5.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14",
+    "pytest>=8.4",
+    "pytest-django>=4.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py", "tests.py"]
