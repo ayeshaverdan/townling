@@ -38,8 +38,13 @@ const ROAD_ROW := 3
 const SIDEWALK_ROWS := [2, 4]
 const FOUNTAIN_CELL := Vector2i(3, 6)
 
+const FONT := "res://assets/kenney/fonts/lilita_one_regular.ttf"
+const SND_OPEN := "assets/kenney/sounds/placement-a.ogg"
+const SND_CLOSE := "assets/kenney/sounds/removal-a.ogg"
+
 const DEFAULT_API_BASE := "http://localhost:8000"
 var _api_base := DEFAULT_API_BASE
+var _font: Font
 
 ## Per-landmark pick data: {name, blurb, box (world AABB)}.
 var _picks: Array = []
@@ -60,6 +65,7 @@ var _health_request: HTTPRequest
 
 
 func _ready() -> void:
+	_font = load(FONT)
 	_setup_light()
 	_build_town()
 	_setup_camera()
@@ -165,9 +171,10 @@ func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0) -> Node3D:
 func _add_label(building: Node3D, text: String, height: float) -> void:
 	var label := Label3D.new()
 	label.text = text
+	label.font = _font
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.pixel_size = 0.0035
-	label.font_size = 48
+	label.font_size = 40
 	label.outline_size = 10
 	label.modulate = Color("2c2c2a")
 	label.outline_modulate = Color(1, 1, 1, 0.95)
@@ -242,6 +249,7 @@ func _open_screen(index: int) -> void:
 	_screen_body.text = "%s\n\n(building screen — coming soon)" % pick["blurb"]
 	_screen_open = true
 	_screen.visible = true
+	Sfx.play(SND_OPEN, -8.0)
 	_size_card()
 	var vp := get_viewport().get_visible_rect().size
 	_card.position = Vector2(16.0, vp.y)
@@ -254,6 +262,7 @@ func _close_screen() -> void:
 	if not _screen_open:
 		return
 	_screen_open = false
+	Sfx.play(SND_CLOSE, -8.0)
 	var vp := get_viewport().get_visible_rect().size
 	var tween := create_tween()
 	tween.tween_property(_card, "position:y", vp.y, 0.2) \

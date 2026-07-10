@@ -1,5 +1,5 @@
 ; Townling game client — Godot 4 project.
-; A 2D hub-and-card UI game (design doc §18). Portrait, mobile-first.
+; Low-poly 3D hub-and-card game on a fixed isometric camera (design doc §18).
 ; Rendered with GL Compatibility so the HTML5 web export runs everywhere.
 
 config_version=5
@@ -12,6 +12,10 @@ run/main_scene="res://scenes/diorama.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+Sfx="*res://scripts/audio.gd"
+
 [display]
 
 window/size/viewport_width=720
@@ -19,6 +23,10 @@ window/size/viewport_height=1280
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+
+[gui]
+
+theme/custom_font="res://assets/kenney/fonts/lilita_one_regular.ttf"
 
 [rendering]
 
