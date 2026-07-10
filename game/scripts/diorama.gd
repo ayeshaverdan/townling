@@ -100,18 +100,18 @@ func _capture_and_quit() -> void:
 # --- Scene construction ----------------------------------------------------
 
 func _setup_light() -> void:
-	# Cosy afternoon: a warm key light with defined soft shadows, and a gentle
-	# (not flat) ambient fill so the colours stay rich, on a muted background.
+	# Cosy warm afternoon, matching the reference: golden key light, soft
+	# shadows, a warm ambient fill so pastels stay soft, muted blue-grey sky.
 	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
-	sun.light_energy = 1.05
-	sun.light_color = Color(1.0, 0.92, 0.78)
+	sun.light_energy = 1.0
+	sun.light_color = Color(1.0, 0.9, 0.74)
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.2
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
-	env.background_color = Color("b7c3c9")        # muted blue-grey, not bright sky
-	env.ambient_light_color = Color(0.96, 0.93, 0.88)
-	env.ambient_light_energy = 0.35               # lower fill -> more depth/cosier
+	env.background_color = Color("b3c4cc")        # soft muted blue-grey
+	env.ambient_light_color = Color(1.0, 0.95, 0.86)  # warm fill
+	env.ambient_light_energy = 0.45
 
 
 func _build_town() -> void:
