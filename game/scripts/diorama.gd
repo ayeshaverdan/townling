@@ -4,22 +4,29 @@ extends Node3D
 ## Low-poly 3D on a fixed orthographic (isometric) camera. The six Band-B
 ## landmark buildings (spec §5 / design doc §5) sit on a 2x2-unit grid of
 ## KayKit City Builder tiles, each captioned with a floating label. Tapping a
-## building selects it (a gentle pop) and slides up a name panel — the first
-## step of the one-tap-deep hub navigation.
+## building slides its screen up over the city; closing returns to the city —
+## everything one tap deep.
 ##
 ## The backend health check from the bootstrap is retained as a UI overlay.
 
 const CITY := "res://assets/city/Assets/gltf/"
 const TILE := 2.0  # world units per grid cell
 
-## The six launch landmarks. Each: display name, building mesh, grid cell.
+## The six launch landmarks. Each: display name, building mesh, grid cell, and a
+## one-line purpose blurb shown on the (placeholder) building screen.
 const LANDMARKS := [
-	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0)},
-	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0)},
-	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0)},
-	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4)},
-	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4)},
-	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4)},
+	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0),
+		"blurb": "Save your coins in the jar and watch them grow."},
+	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0),
+		"blurb": "Take a class to earn a skill star."},
+	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0),
+		"blurb": "Work a shift and earn your weekly salary."},
+	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4),
+		"blurb": "Rest to refill energy, decorate, plan your day."},
+	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4),
+		"blurb": "Buy groceries and the things you need."},
+	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4),
+		"blurb": "Find gigs and quick jobs for extra coins."},
 ]
 ## Mesh heights (world units) for label placement + pick boxes, from glTF bounds.
 const HEIGHTS := {
@@ -29,22 +36,25 @@ const HEIGHTS := {
 const COLS := 5
 const ROWS := 5
 const ROAD_ROW := 2
-const HOVER_LIFT := 0.45  # how far a selected building pops up
 
 const DEFAULT_API_BASE := "http://localhost:8000"
 var _api_base := DEFAULT_API_BASE
 
-## Per-landmark runtime state: {name, node, box (world AABB), label}.
+## Per-landmark pick data: {name, blurb, box (world AABB)}.
 var _picks: Array = []
-var _selected := -1
 
 @onready var camera: Camera3D = $Camera
 @onready var sun: DirectionalLight3D = $Sun
 @onready var world: Node3D = $World
 @onready var backend_status: Label = $UI/Banner/BackendStatus
 
-var _panel: PanelContainer
-var _panel_name: Label
+# Building-screen widgets (built in code).
+var _screen: Control
+var _card: PanelContainer
+var _screen_title: Label
+var _screen_body: Label
+var _screen_open := false
+
 var _config_request: HTTPRequest
 var _health_request: HTTPRequest
 
@@ -69,13 +79,9 @@ func _ready() -> void:
 
 
 func _capture_and_quit() -> void:
-	# Exercise the selected state so the preview shows the pop + name panel.
+	# Open a building screen so the preview exercises it.
 	if _picks.size() > 0:
-		_selected = 0
-		_picks[0]["node"].position.y = HOVER_LIFT
-		_picks[0]["label"].modulate = Color("e24b4a")
-		_panel_name.text = _picks[0]["name"]
-		_panel.visible = true
+		_open_screen(0)
 	for _i in range(6):
 		await get_tree().process_frame
 	var image := get_viewport().get_texture().get_image()
@@ -114,13 +120,12 @@ func _build_town() -> void:
 		if inst == null:
 			continue
 		var height: float = HEIGHTS.get(lm["mesh"], 3.0)
-		var label := _add_label(inst, lm["name"], height)
-		# World-space pick box: 2x2 footprint centred on the cell, mesh-tall.
+		_add_label(inst, lm["name"], height)
 		var box := AABB(
 			Vector3(cell.x * TILE - 1.0, 0.0, cell.y * TILE - 1.0),
 			Vector3(2.0, height, 2.0)
 		)
-		_picks.append({"name": lm["name"], "node": inst, "box": box, "label": label})
+		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
 
 	_place("%scar_sedan.gltf" % CITY, 1, ROAD_ROW, 90.0)
 	_place("%scar_taxi.gltf" % CITY, 3, ROAD_ROW, -90.0)
@@ -143,7 +148,7 @@ func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
 	return inst
 
 
-func _add_label(building: Node3D, text: String, height: float) -> Label3D:
+func _add_label(building: Node3D, text: String, height: float) -> void:
 	var label := Label3D.new()
 	label.text = text
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -154,7 +159,6 @@ func _add_label(building: Node3D, text: String, height: float) -> Label3D:
 	label.outline_modulate = Color(1, 1, 1, 0.95)
 	label.position = Vector3(0.0, height + 0.6, 0.0)
 	building.add_child(label)
-	return label
 
 
 func _setup_camera() -> void:
@@ -166,9 +170,11 @@ func _setup_camera() -> void:
 	camera.look_at(target, Vector3.UP)
 
 
-# --- Interaction -----------------------------------------------------------
+# --- Interaction: tap a building -> open its screen -------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _screen_open:
+		return
 	var pos := Vector2.INF
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pos = event.position
@@ -176,12 +182,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		pos = event.position
 	if pos == Vector2.INF:
 		return
-	_pick_at(pos)
 
-
-func _pick_at(screen_pos: Vector2) -> void:
-	var origin := camera.project_ray_origin(screen_pos)
-	var dir := camera.project_ray_normal(screen_pos)
+	var origin := camera.project_ray_origin(pos)
+	var dir := camera.project_ray_normal(pos)
 	var best := -1
 	var best_dist := INF
 	for i in _picks.size():
@@ -189,10 +192,8 @@ func _pick_at(screen_pos: Vector2) -> void:
 		if t >= 0.0 and t < best_dist:
 			best_dist = t
 			best = i
-	if best == -1:
-		_deselect()
-	else:
-		_select(best)
+	if best != -1:
+		_open_screen(best)
 
 
 ## Ray/AABB entry distance via the slab method; -1 if no hit.
@@ -220,40 +221,31 @@ func _ray_aabb(ro: Vector3, rd: Vector3, box: AABB) -> float:
 	return tmin if tmin >= 0.0 else tmax
 
 
-func _select(index: int) -> void:
-	if index == _selected:
-		return
-	_deselect()
-	_selected = index
+# --- Building screen (slide up over the city) ------------------------------
+
+func _open_screen(index: int) -> void:
 	var pick = _picks[index]
-	_hop(pick["node"], HOVER_LIFT)
-	pick["label"].modulate = Color("e24b4a")
-	_panel_name.text = pick["name"]
-	_panel.visible = true
-
-
-func _deselect() -> void:
-	if _selected == -1:
-		return
-	var pick = _picks[_selected]
-	_hop(pick["node"], 0.0)
-	pick["label"].modulate = Color("2c2c2a")
-	_selected = -1
-	_panel.visible = false
-
-
-## Tween a building's height with a little bounce.
-func _hop(node: Node3D, to_y: float) -> void:
+	_screen_title.text = pick["name"]
+	_screen_body.text = "%s\n\n(building screen — coming soon)" % pick["blurb"]
+	_screen_open = true
+	_screen.visible = true
+	_size_card()
+	var vp := get_viewport().get_visible_rect().size
+	_card.position = Vector2(16.0, vp.y)  # start just below the screen
 	var tween := create_tween()
-	tween.tween_property(node, "position:y", to_y, 0.18) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_card, "position:y", 64.0, 0.25) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-func _on_open_pressed() -> void:
-	if _selected == -1:
+func _close_screen() -> void:
+	if not _screen_open:
 		return
-	# Placeholder for the building screen (one tap deep, design doc §5/§13).
-	_panel_name.text = "%s — coming soon" % _picks[_selected]["name"]
+	_screen_open = false
+	var vp := get_viewport().get_visible_rect().size
+	var tween := create_tween()
+	tween.tween_property(_card, "position:y", vp.y, 0.2) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tween.tween_callback(func() -> void: _screen.visible = false)
 
 
 # --- UI --------------------------------------------------------------------
@@ -261,44 +253,76 @@ func _on_open_pressed() -> void:
 func _setup_ui() -> void:
 	var ui: CanvasLayer = $UI
 
-	_panel = PanelContainer.new()
-	_panel.anchor_left = 0.0
-	_panel.anchor_right = 1.0
-	_panel.anchor_top = 1.0
-	_panel.anchor_bottom = 1.0
-	_panel.offset_left = 24.0
-	_panel.offset_right = -24.0
-	_panel.offset_top = -132.0
-	_panel.offset_bottom = -28.0
-	_panel.visible = false
+	# Full-screen blocker; a tap on the dim area outside the card closes it.
+	_screen = Control.new()
+	_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_screen.mouse_filter = Control.MOUSE_FILTER_STOP
+	_screen.visible = false
+	_screen.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.pressed:
+			_close_screen()
+	)
+	ui.add_child(_screen)
 
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.17, 0.17, 0.16, 0.25)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_screen.add_child(dim)
+
+	# The card (manual size/position so it can slide independently).
+	_card = PanelContainer.new()
+	_card.mouse_filter = Control.MOUSE_FILTER_STOP
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("f7f6f2")
-	style.set_corner_radius_all(18)
-	style.set_content_margin_all(18)
-	style.shadow_color = Color(0, 0, 0, 0.18)
-	style.shadow_size = 8
-	_panel.add_theme_stylebox_override("panel", style)
-	ui.add_child(_panel)
+	style.set_corner_radius_all(24)
+	style.set_content_margin_all(28)
+	style.shadow_color = Color(0, 0, 0, 0.22)
+	style.shadow_size = 12
+	_card.add_theme_stylebox_override("panel", style)
+	_screen.add_child(_card)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
-	_panel.add_child(row)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 20)
+	_card.add_child(col)
 
-	_panel_name = Label.new()
-	_panel_name.text = ""
-	_panel_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_panel_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_panel_name.add_theme_color_override("font_color", Color("2c2c2a"))
-	_panel_name.add_theme_font_size_override("font_size", 40)
-	row.add_child(_panel_name)
+	var header := HBoxContainer.new()
+	col.add_child(header)
 
-	var open := Button.new()
-	open.text = "Open"
-	open.custom_minimum_size = Vector2(120, 64)
-	open.add_theme_font_size_override("font_size", 28)
-	open.pressed.connect(_on_open_pressed)
-	row.add_child(open)
+	_screen_title = Label.new()
+	_screen_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_screen_title.add_theme_color_override("font_color", Color("2c2c2a"))
+	_screen_title.add_theme_font_size_override("font_size", 52)
+	header.add_child(_screen_title)
+
+	var close := Button.new()
+	close.text = "✕"
+	close.custom_minimum_size = Vector2(72, 72)
+	close.add_theme_font_size_override("font_size", 36)
+	close.pressed.connect(_close_screen)
+	header.add_child(close)
+
+	_screen_body = Label.new()
+	_screen_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_screen_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_screen_body.add_theme_color_override("font_color", Color("7a5410"))
+	_screen_body.add_theme_font_size_override("font_size", 30)
+	col.add_child(_screen_body)
+
+	_size_card()
+
+
+func _size_card() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	_card.custom_minimum_size = Vector2(vp.x - 32.0, vp.y - 96.0)
+	_card.size = Vector2(vp.x - 32.0, vp.y - 96.0)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED and _card != null:
+		_size_card()
+		if _screen_open:
+			_card.position = Vector2(16.0, 64.0)
 
 
 # --- Backend health overlay (retained from bootstrap) ----------------------
