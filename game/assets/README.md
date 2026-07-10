@@ -4,35 +4,30 @@ Art and other Godot resources for the Townling client. Referenced from
 scenes/scripts as `res://assets/...`.
 
 **Visual direction: low-poly 3D on a fixed isometric camera (2.5D)** — see the
-visual-direction update in design doc §18. Built from CC0 KayKit packs.
+visual-direction update in design doc §18.
 
 ## Current packs
 
 | Pack | Location | What it is | Status |
 |------|----------|-----------|--------|
-| KayKit City Builder Bits | `city/` | Modern low-poly 3D: 8 buildings (A–H), 5 cars, roads, traffic lights, props | **Keeper** — fits the modern town |
-| KayKit Adventurers | `characters/` | 6 rigged low-poly characters + weapons + animation rigs | **Placeholder** — medieval-fantasy/weapons; replace before art-judged playtest |
+| Kenney Starter Kit: City Builder | `kenney/` | Low-poly 3D city on a 1×1 grid: 5 buildings, roads, grass, tree tiles, pavement, fountain — one shared `colormap.png` | **In use** — the town |
+| KayKit Adventurers | `characters/` | 6 rigged low-poly characters + weapons + animation rigs | **Placeholder** — medieval-fantasy; replace before art-judged playtest |
 
-Licenses: both CC0. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+Licenses (all commercial-safe): see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
-## Structure & formats
+## Kenney city kit
 
-Each pack ships every model in four formats — `fbx/`, `fbx(unity)/`, `gltf/`,
-`obj/` — plus a shared texture atlas. **Godot imports glTF (`.gltf`/`.glb`)
-natively, so glTF is the format we use.** The `fbx/`, `fbx(unity)/`, and `obj/`
-duplicates are **git-ignored** (see repo `.gitignore`) to keep the repo lean —
-they remain on disk locally but are not versioned. If you re-clone, only glTF
-comes back; re-download the pack if you need the other formats.
-
-Key glTF locations:
-- City models: `city/Assets/gltf/*.gltf` (+ `.bin`, `citybits_texture.png`)
-- Playable characters: `characters/Characters/gltf/*.glb`
-- Character animations: `characters/Animations/gltf/Rig_Medium/*.glb`
-- Weapons/props: `characters/Assets/gltf/*.gltf`
+- **Grid:** 1×1 units, origin-centred, tiles sit on `y=0`.
+- **Buildings:** `building-small-a/b/c/d` (heights 0.95–1.75), `building-garage` (0.55).
+- **Ground:** `grass`, `pavement`, roads (`road-straight`, `-corner`, `-intersection`, `-split`, `-straight-lightposts`).
+- **Detail:** `grass-trees`, `grass-trees-tall`, `pavement-fountain`.
+- One shared texture: `kenney/Textures/colormap.png` (referenced by every `.glb`).
+- We use the **models only** — not the kit's GridMap builder scripts. The town is
+  composed procedurally in `scripts/diorama.gd`.
 
 ## Conventions
 
 - Import through the **Godot editor** so it generates `.import` sidecars
   (import settings + stable UIDs). **Commit the `.import` files**; the `.godot/`
   import cache is git-ignored (expected).
-- Keep the shared texture atlas next to the models that reference it.
+- Keep `colormap.png` under `kenney/Textures/` so the `.glb` relative paths resolve.

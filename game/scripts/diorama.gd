@@ -1,41 +1,42 @@
 extends Node3D
 ## Townling town diorama (design doc §5, §18 visual-direction update).
 ##
-## Low-poly 3D on a fixed orthographic (isometric) camera. The six Band-B
-## landmark buildings (spec §5 / design doc §5) sit on a 2x2-unit grid of
-## KayKit City Builder tiles, each captioned with a floating label. Tapping a
-## building slides its screen up over the city; closing returns to the city —
-## everything one tap deep.
+## Low-poly 3D on a fixed orthographic (isometric) camera, built from Kenney's
+## City Builder kit (1x1-unit tiles). The six Band-B landmark buildings (spec
+## §5) sit on a grass grid with a street, sidewalks, trees and a fountain, each
+## captioned with a floating label. Tapping a building slides its screen up over
+## the city; closing returns to it — one tap deep.
 ##
 ## The backend health check from the bootstrap is retained as a UI overlay.
 
-const CITY := "res://assets/city/Assets/gltf/"
-const TILE := 2.0  # world units per grid cell
+const KEN := "res://assets/kenney/"
+const TILE := 1.0  # world units per grid cell
 
-## The six launch landmarks. Each: display name, building mesh, grid cell, and a
-## one-line purpose blurb shown on the (placeholder) building screen.
+## The six launch landmarks: name, Kenney model, grid cell, purpose blurb.
 const LANDMARKS := [
-	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0),
+	{"name": "Bank", "model": "building-small-c", "cell": Vector2i(1, 1),
 		"blurb": "Save your coins in the jar and watch them grow."},
-	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0),
+	{"name": "School", "model": "building-small-b", "cell": Vector2i(3, 1),
 		"blurb": "Take a class to earn a skill star."},
-	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0),
+	{"name": "Workplace", "model": "building-small-d", "cell": Vector2i(5, 1),
 		"blurb": "Work a shift and earn your weekly salary."},
-	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4),
+	{"name": "Home", "model": "building-small-a", "cell": Vector2i(1, 5),
 		"blurb": "Rest to refill energy, decorate, plan your day."},
-	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4),
+	{"name": "Shop", "model": "building-garage", "cell": Vector2i(3, 5),
 		"blurb": "Buy groceries and the things you need."},
-	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4),
+	{"name": "Notice Board", "model": "building-garage", "cell": Vector2i(5, 5),
 		"blurb": "Find gigs and quick jobs for extra coins."},
 ]
-## Mesh heights (world units) for label placement + pick boxes, from glTF bounds.
+## Model heights (world units) for label placement + pick boxes, from glTF bounds.
 const HEIGHTS := {
-	"building_A": 1.65, "building_B": 1.65, "building_D": 2.97,
-	"building_E": 2.35, "building_G": 2.98, "building_H": 3.05,
+	"building-small-a": 0.95, "building-small-b": 1.63, "building-small-c": 1.75,
+	"building-small-d": 1.0, "building-garage": 0.55,
 }
-const COLS := 5
-const ROWS := 5
-const ROAD_ROW := 2
+const COLS := 7
+const ROWS := 7
+const ROAD_ROW := 3
+const SIDEWALK_ROWS := [2, 4]
+const FOUNTAIN_CELL := Vector2i(3, 6)
 
 const DEFAULT_API_BASE := "http://localhost:8000"
 var _api_base := DEFAULT_API_BASE
@@ -48,7 +49,6 @@ var _picks: Array = []
 @onready var world: Node3D = $World
 @onready var backend_status: Label = $UI/Banner/BackendStatus
 
-# Building-screen widgets (built in code).
 var _screen: Control
 var _card: PanelContainer
 var _screen_title: Label
@@ -79,10 +79,9 @@ func _ready() -> void:
 
 
 func _capture_and_quit() -> void:
-	# --zoom frames a single building for design review; default is the town.
 	if "--zoom" in OS.get_cmdline_args():
-		var focus := Vector3(0.0, 1.0, 1.4)  # the Bank lot
-		camera.size = 7.0
+		var focus := Vector3(1.0, 0.6, 1.0)  # the Bank
+		camera.size = 5.0
 		camera.position = focus + Vector3(9.0, 10.0, 9.0)
 		camera.look_at(focus, Vector3.UP)
 	for _i in range(6):
@@ -96,185 +95,92 @@ func _capture_and_quit() -> void:
 
 func _setup_light() -> void:
 	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
-	sun.light_energy = 0.6
-	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.light_energy = 0.75
+	sun.light_color = Color(1.0, 0.98, 0.92)
 	sun.shadow_enabled = true
-	sun.shadow_blur = 2.0
+	sun.shadow_blur = 1.5
 
 
 func _build_town() -> void:
-	var landmark_cells := {}
+	var building_cells := {}
 	for lm in LANDMARKS:
-		landmark_cells[lm["cell"]] = lm
+		building_cells[lm["cell"]] = lm
 
+	# Ground layer: road / sidewalk / grass.
 	for row in ROWS:
 		for col in COLS:
 			var cell := Vector2i(col, row)
-			if landmark_cells.has(cell):
-				continue
 			if row == ROAD_ROW:
-				_place("%sroad_straight.gltf" % CITY, col, row, 90.0)
+				_spawn("road-straight", cell, 90.0)
+			elif row in SIDEWALK_ROWS:
+				_spawn("pavement", cell)
 			else:
-				_place("%sbase.gltf" % CITY, col, row)
+				_spawn("grass", cell)
 
+	# Landmarks + labels + pick boxes.
 	for lm in LANDMARKS:
 		var cell: Vector2i = lm["cell"]
-		var inst := _place("%s%s.gltf" % [CITY, lm["mesh"]], cell.x, cell.y)
+		var inst := _spawn(lm["model"], cell)
 		if inst == null:
 			continue
-		var height: float = HEIGHTS.get(lm["mesh"], 3.0)
+		var height: float = HEIGHTS.get(lm["model"], 1.5)
 		_add_label(inst, lm["name"], height)
 		var box := AABB(
-			Vector3(cell.x * TILE - 1.0, 0.0, cell.y * TILE - 1.0),
-			Vector3(2.0, height, 2.0)
+			Vector3(cell.x * TILE - 0.5, 0.0, cell.y * TILE - 0.5),
+			Vector3(TILE, height, TILE)
 		)
 		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
 
-		# Per-landmark detailing (one category at a time).
-		var origin := Vector3(cell.x * TILE, 0.0, cell.y * TILE)
-		if lm["name"] == "Bank":
-			_decorate_bank(origin)
+	# Greenery: trees on the open grass cells (rows 0/6 and gaps in 1/5).
+	var tree_cells := [
+		Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
+		Vector2i(4, 0), Vector2i(5, 0), Vector2i(6, 0),
+		Vector2i(0, 1), Vector2i(2, 1), Vector2i(4, 1), Vector2i(6, 1),
+		Vector2i(0, 5), Vector2i(2, 5), Vector2i(4, 5), Vector2i(6, 5),
+		Vector2i(0, 6), Vector2i(1, 6), Vector2i(2, 6), Vector2i(4, 6),
+		Vector2i(5, 6), Vector2i(6, 6),
+	]
+	var tall := true
+	for cell in tree_cells:
+		_spawn("grass-trees-tall" if tall else "grass-trees", cell)
+		tall = not tall
 
-	_place("%scar_sedan.gltf" % CITY, 1, ROAD_ROW, 90.0)
-	_place("%scar_taxi.gltf" % CITY, 3, ROAD_ROW, -90.0)
-	_place("%sbush.gltf" % CITY, 2, 1)
-	_place("%sbush.gltf" % CITY, 1, 3)
-	_place("%sbush.gltf" % CITY, 3, 3)
-	_place("%sstreetlight.gltf" % CITY, 0, 1, 180.0)
-	_place("%sstreetlight.gltf" % CITY, 4, 3)
+	# A fountain centrepiece in the front park.
+	_spawn("pavement-fountain", FOUNTAIN_CELL)
 
 
-func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
-	var packed: Resource = load(path)
+## Instance a Kenney model at grid (col, row), rotated about Y.
+func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0) -> Node3D:
+	var packed: Resource = load("%s%s.glb" % [KEN, model])
 	if packed == null:
-		push_warning("Missing asset: %s" % path)
+		push_warning("Missing model: %s" % model)
 		return null
 	var inst: Node3D = packed.instantiate()
-	inst.position = Vector3(col * TILE, 0.0, row * TILE)
+	inst.position = Vector3(cell.x * TILE, 0.0, cell.y * TILE)
 	inst.rotation.y = deg_to_rad(rot_deg)
 	world.add_child(inst)
 	return inst
-
-
-# --- Composition helpers (world-space) -------------------------------------
-
-## Instance a kit asset at a world position, rotated about Y and scaled.
-func _spawn_at(path: String, pos: Vector3, rot_deg: float = 0.0, scale: float = 1.0) -> Node3D:
-	var packed: Resource = load(path)
-	if packed == null:
-		push_warning("Missing asset: %s" % path)
-		return null
-	var inst: Node3D = packed.instantiate()
-	inst.position = pos
-	inst.rotation.y = deg_to_rad(rot_deg)
-	inst.scale = Vector3.ONE * scale
-	world.add_child(inst)
-	return inst
-
-
-## A soft matte coloured box primitive (for signage / trunks).
-func _box(size: Vector3, color: Color, pos: Vector3) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.95
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	mi.material_override = mat
-	mi.position = pos
-	world.add_child(mi)
-	return mi
-
-
-## A low-poly tree: slim brown trunk + a scaled bush canopy, styled to the kit.
-func _tree(pos: Vector3, size: float = 2.0) -> void:
-	_box(Vector3(0.1, 0.45, 0.1), Color("6b4a2a"), pos + Vector3(0, 0.22, 0))
-	_spawn_at("%sbush.gltf" % CITY, pos + Vector3(0, 0.35, 0), 0.0, size)
-
-
-## A standing sign: post + coloured panel + billboard text.
-func _sign(pos: Vector3, text: String, panel_color: Color, face_deg: float) -> void:
-	var root := Node3D.new()
-	root.position = pos
-	root.rotation.y = deg_to_rad(face_deg)
-	world.add_child(root)
-
-	var post := MeshInstance3D.new()
-	var post_mesh := BoxMesh.new()
-	post_mesh.size = Vector3(0.09, 1.35, 0.09)
-	post.mesh = post_mesh
-	var post_mat := StandardMaterial3D.new()
-	post_mat.albedo_color = Color("8a8a8a")
-	post.material_override = post_mat
-	post.position = Vector3(0, 0.675, 0)
-	root.add_child(post)
-
-	var panel := MeshInstance3D.new()
-	var panel_mesh := BoxMesh.new()
-	panel_mesh.size = Vector3(1.35, 0.6, 0.08)
-	panel.mesh = panel_mesh
-	var panel_mat := StandardMaterial3D.new()
-	panel_mat.albedo_color = panel_color
-	panel_mat.roughness = 0.9
-	panel.material_override = panel_mat
-	panel.position = Vector3(0, 1.55, 0)
-	root.add_child(panel)
-
-	var label := Label3D.new()
-	label.text = text
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.pixel_size = 0.005
-	label.font_size = 90
-	label.outline_size = 10
-	label.modulate = Color("ffffff")
-	label.outline_modulate = Color(0.06, 0.1, 0.24, 1.0)
-	label.position = Vector3(0, 1.55, 0.06)
-	root.add_child(label)
-
-
-## Detail the Bank lot: hedges, trees, a BANK sign, an ATM, street furniture.
-## Front faces the road (+Z). Kept inside the lot so it reads at town scale.
-func _decorate_bank(origin: Vector3) -> void:
-	# Neat trimmed hedge along the frontage, with a gap for the entrance path.
-	for x in [-0.8, -0.5, 0.5, 0.8]:
-		_spawn_at("%sbush.gltf" % CITY, origin + Vector3(x, 0, 1.1), 0.0, 1.1)
-	# Two trees framing the plot at the front corners, clear of the sign.
-	_tree(origin + Vector3(-1.35, 0, 1.6))
-	_tree(origin + Vector3(1.35, 0, 2.4))
-	# Prominent BANK sign on the entrance path, facing the camera.
-	_sign(origin + Vector3(0.0, 0, 1.9), "BANK", Color("3a4a7a"), 45.0)
-	# An ATM: dark cabinet + a little blue screen, beside the entrance.
-	_box(Vector3(0.34, 0.72, 0.28), Color("343a45"), origin + Vector3(0.75, 0.36, 1.3))
-	_box(Vector3(0.22, 0.16, 0.06), Color("6aa6d6"), origin + Vector3(0.75, 0.5, 1.16))
-	# Street furniture, tucked to the sides.
-	_spawn_at("%sbench.gltf" % CITY, origin + Vector3(-1.3, 0, 2.5), 90.0)
-	_spawn_at("%sstreetlight.gltf" % CITY, origin + Vector3(1.5, 0, 1.0), 180.0)
-	_spawn_at("%sfirehydrant.gltf" % CITY, origin + Vector3(-1.45, 0, 1.1))
-	# A customer's car parked at the curb.
-	_spawn_at("%scar_sedan.gltf" % CITY, origin + Vector3(0.1, 0, 3.05), 90.0)
 
 
 func _add_label(building: Node3D, text: String, height: float) -> void:
 	var label := Label3D.new()
 	label.text = text
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.pixel_size = 0.006
-	label.font_size = 44
+	label.pixel_size = 0.0035
+	label.font_size = 48
 	label.outline_size = 10
 	label.modulate = Color("2c2c2a")
 	label.outline_modulate = Color(1, 1, 1, 0.95)
-	label.position = Vector3(0.0, height + 0.6, 0.0)
+	label.position = Vector3(0.0, height + 0.35, 0.0)
 	building.add_child(label)
 
 
 func _setup_camera() -> void:
-	var target := Vector3((COLS - 1) * TILE * 0.5, 3.0, (ROWS - 1) * TILE * 0.5)
+	var target := Vector3((COLS - 1) * TILE * 0.5, 1.2, (ROWS - 1) * TILE * 0.5)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
-	camera.size = 13.0
-	camera.position = target + Vector3(14.0, 15.0, 14.0)
+	camera.size = 9.0
+	camera.position = target + Vector3(12.0, 13.0, 12.0)
 	camera.look_at(target, Vector3.UP)
 
 
@@ -304,7 +210,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_screen(best)
 
 
-## Ray/AABB entry distance via the slab method; -1 if no hit.
 func _ray_aabb(ro: Vector3, rd: Vector3, box: AABB) -> float:
 	var tmin := -INF
 	var tmax := INF
@@ -339,7 +244,7 @@ func _open_screen(index: int) -> void:
 	_screen.visible = true
 	_size_card()
 	var vp := get_viewport().get_visible_rect().size
-	_card.position = Vector2(16.0, vp.y)  # start just below the screen
+	_card.position = Vector2(16.0, vp.y)
 	var tween := create_tween()
 	tween.tween_property(_card, "position:y", 64.0, 0.25) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -361,7 +266,6 @@ func _close_screen() -> void:
 func _setup_ui() -> void:
 	var ui: CanvasLayer = $UI
 
-	# Full-screen blocker; a tap on the dim area outside the card closes it.
 	_screen = Control.new()
 	_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_screen.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -378,7 +282,6 @@ func _setup_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_screen.add_child(dim)
 
-	# The card (manual size/position so it can slide independently).
 	_card = PanelContainer.new()
 	_card.mouse_filter = Control.MOUSE_FILTER_STOP
 	var style := StyleBoxFlat.new()
