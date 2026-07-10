@@ -11,17 +11,23 @@ extends Node3D
 const CITY := "res://assets/city/Assets/gltf/"
 const TILE := 2.0  # world units per grid cell
 
-## The six launch landmarks. Each: display name, building mesh, grid cell,
-## and a Townling-palette wall colour. Layout: two rows of three facing a
-## central street.
+## The six launch landmarks. Each: display name, building mesh, grid cell, and
+## a Townling-palette skin (a luminance-colorized copy of the KayKit atlas in
+## assets/city/townling/ — keeps windows/roofs/shopfronts, recolours the hue).
+const SKINS := "res://assets/city/townling/"
 const LANDMARKS := [
-	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0), "color": Color("aec3e8")},
-	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0), "color": Color("ebc985")},
-	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0), "color": Color("e9a97e")},
-	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4), "color": Color("cfe3c4")},
-	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4), "color": Color("f0a9a0")},
-	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4), "color": Color("c9aee4")},
+	{"name": "Bank", "mesh": "building_G", "cell": Vector2i(0, 0), "skin": "bank"},
+	{"name": "School", "mesh": "building_E", "cell": Vector2i(2, 0), "skin": "school"},
+	{"name": "Workplace", "mesh": "building_H", "cell": Vector2i(4, 0), "skin": "workplace"},
+	{"name": "Home", "mesh": "building_B", "cell": Vector2i(0, 4), "skin": "home"},
+	{"name": "Shop", "mesh": "building_A", "cell": Vector2i(2, 4), "skin": "shop"},
+	{"name": "Notice Board", "mesh": "building_D", "cell": Vector2i(4, 4), "skin": "noticeboard"},
 ]
+## Mesh heights (world units) for label placement, from the glTF bounds.
+const HEIGHTS := {
+	"building_A": 1.65, "building_B": 1.65, "building_D": 2.97,
+	"building_E": 2.35, "building_G": 2.98, "building_H": 3.05,
+}
 const COLS := 5
 const ROWS := 5
 const ROAD_ROW := 2
@@ -86,13 +92,13 @@ func _build_town() -> void:
 			else:
 				_place("%sbase.gltf" % CITY, col, row)
 
-	# Landmarks, coloured and labelled.
+	# Landmarks: recoloured skin + floating label.
 	for lm in LANDMARKS:
 		var cell: Vector2i = lm["cell"]
 		var inst := _place("%s%s.gltf" % [CITY, lm["mesh"]], cell.x, cell.y)
 		if inst:
-			_tint(inst, lm["color"])
-			_add_label(inst, lm["name"])
+			_skin(inst, "%s%s.png" % [SKINS, lm["skin"]])
+			_add_label(inst, lm["name"], HEIGHTS.get(lm["mesh"], 3.0))
 
 	# A little life on the street and lots.
 	_place("%scar_sedan.gltf" % CITY, 1, ROAD_ROW, 90.0)
@@ -117,10 +123,16 @@ func _place(path: String, col: int, row: int, rot_deg: float = 0.0) -> Node3D:
 	return inst
 
 
-## Recolour every mesh surface under `node` with a soft matte Townling colour.
-func _tint(node: Node, color: Color) -> void:
+## Re-skin every mesh surface under `node` with a colorized atlas texture.
+## Keeps the model's UVs (so windows/roofs/shopfronts stay), swaps the palette.
+func _skin(node: Node, texture_path: String) -> void:
+	var tex: Texture2D = load(texture_path)
+	if tex == null:
+		push_warning("Missing skin: %s" % texture_path)
+		return
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
+	mat.albedo_texture = tex
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	mat.roughness = 0.95
 	mat.metallic = 0.0
 	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
@@ -137,17 +149,17 @@ func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
 	return out
 
 
-## Float a billboarded name label above a placed building.
-func _add_label(building: Node3D, text: String) -> void:
+## Float a billboarded name label just above a placed building's roof.
+func _add_label(building: Node3D, text: String, height: float) -> void:
 	var label := Label3D.new()
 	label.text = text
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.pixel_size = 0.006
-	label.font_size = 48
-	label.outline_size = 8
+	label.font_size = 44
+	label.outline_size = 10
 	label.modulate = Color("2c2c2a")
 	label.outline_modulate = Color(1, 1, 1, 0.95)
-	label.position = Vector3(0.0, 3.4, 0.0)
+	label.position = Vector3(0.0, height + 0.6, 0.0)
 	building.add_child(label)
 
 
