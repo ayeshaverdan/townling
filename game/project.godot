@@ -33,3 +33,7 @@ theme/custom_font="res://assets/kenney/fonts/lilita_one_regular.ttf"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0.968627, 0.964706, 0.94902, 1)
+; Smoothness: 4x MSAA (supported by gl_compatibility/WebGL2) + soft shadows.
+anti_aliasing/quality/msaa_3d=2
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/directional_shadow/size=4096
