@@ -23,7 +23,8 @@ COPY . .
 # fails the build), then export. Fail loudly if the build is missing.
 RUN mkdir -p build \
  && (godot --headless --import 2>&1 | tail -n 5 || true) \
- && godot --headless -s res://tests/test_game_state.gd 2>&1 | grep -E "PASSED|FAIL" \
+ && godot --headless -s res://tests/test_game_state.gd > /tmp/tests.log 2>&1; \
+    ec=$?; grep -E "PASSED|FAIL" /tmp/tests.log; test $ec -eq 0 \
  && godot --headless --export-release "Web" build/index.html 2>&1 | tail -n 30 \
  && test -f build/index.html
 
