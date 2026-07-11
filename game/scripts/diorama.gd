@@ -86,9 +86,9 @@ func _ready() -> void:
 
 func _capture_and_quit() -> void:
 	if "--zoom" in OS.get_cmdline_args():
-		var focus := Vector3(1.0, 0.6, 1.0)  # the Bank
-		camera.size = 5.0
-		camera.position = focus + Vector3(9.0, 10.0, 9.0)
+		var focus := Vector3(1.0, 0.7, 1.2)  # the Bank lot
+		var dir := Vector3(1.0, 1.05, 1.0).normalized()
+		camera.position = focus + dir * 11.0
 		camera.look_at(focus, Vector3.UP)
 	for _i in range(6):
 		await get_tree().process_frame
@@ -155,6 +155,10 @@ func _build_town() -> void:
 		)
 		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
 
+		# Per-landmark detailing (one category at a time; Bank first).
+		if lm["name"] == "Bank":
+			_decorate_bank(Vector3(cell.x * TILE, 0.0, cell.y * TILE))
+
 	# Greenery: trees on the open grass cells (rows 0/6 and gaps in 1/5).
 	var tree_cells := [
 		Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
@@ -184,6 +188,100 @@ func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0) -> Node3D:
 	inst.rotation.y = deg_to_rad(rot_deg)
 	world.add_child(inst)
 	return inst
+
+
+# --- Composition helpers (Kenney tiles are 1x1; surfaces sit at y≈0.06) ----
+
+const GROUND_Y := 0.06
+
+## A soft matte coloured box primitive, positioned by its base centre.
+func _box(size: Vector3, color: Color, base_pos: Vector3, rot_deg: float = 0.0) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.95
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	mi.material_override = mat
+	mi.position = base_pos + Vector3(0.0, size.y * 0.5, 0.0)
+	mi.rotation.y = deg_to_rad(rot_deg)
+	world.add_child(mi)
+	return mi
+
+
+## A standing sign: grey post, coloured panel, Lilita text on the panel face.
+func _sign(base_pos: Vector3, text: String, panel_color: Color, face_deg: float) -> void:
+	var root := Node3D.new()
+	root.position = base_pos
+	root.rotation.y = deg_to_rad(face_deg)
+	world.add_child(root)
+
+	var post := BoxMesh.new()
+	post.size = Vector3(0.05, 0.55, 0.05)
+	var post_mi := MeshInstance3D.new()
+	post_mi.mesh = post
+	var post_mat := StandardMaterial3D.new()
+	post_mat.albedo_color = Color("9a9a9a")
+	post_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	post_mi.material_override = post_mat
+	post_mi.position = Vector3(0.0, 0.275, 0.0)
+	root.add_child(post_mi)
+
+	var panel := BoxMesh.new()
+	panel.size = Vector3(0.55, 0.26, 0.05)
+	var panel_mi := MeshInstance3D.new()
+	panel_mi.mesh = panel
+	var panel_mat := StandardMaterial3D.new()
+	panel_mat.albedo_color = panel_color
+	panel_mat.roughness = 0.9
+	panel_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	panel_mi.material_override = panel_mat
+	panel_mi.position = Vector3(0.0, 0.62, 0.0)
+	root.add_child(panel_mi)
+
+	var label := Label3D.new()
+	label.text = text
+	label.font = _font
+	label.pixel_size = 0.003
+	label.font_size = 56
+	label.modulate = Color(1, 1, 1)
+	label.outline_size = 4
+	label.outline_modulate = Color(0, 0, 0, 0.25)
+	label.position = Vector3(0.0, 0.62, 0.03)
+	root.add_child(label)
+
+
+## A flat coin medallion (the kit's coin sprite) mounted on a wall face.
+func _coin_medallion(pos: Vector3, face_deg: float, diameter: float = 0.2) -> void:
+	var tex: Texture2D = load("res://assets/ui/coin.png")
+	if tex == null:
+		return
+	var sprite := Sprite3D.new()
+	sprite.texture = tex
+	sprite.pixel_size = diameter / float(maxi(tex.get_width(), tex.get_height()))
+	sprite.position = pos
+	sprite.rotation.y = deg_to_rad(face_deg)
+	sprite.shaded = true
+	world.add_child(sprite)
+
+
+## Detail the Bank lot (cell centre at `origin`; the door faces +Z, onto the
+## sidewalk). Kept tight to the 1x1 lot so it reads at town scale.
+func _decorate_bank(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	# BANK sign at the front-left corner of the lot, angled to the camera.
+	_sign(ground + Vector3(-0.42, 0.0, 0.62), "BANK", Color("3a4a7a"), 45.0)
+	# Gold coin medallion mounted above the door (front wall is at z≈+0.5).
+	_coin_medallion(origin + Vector3(0.0, 0.66, 0.515), 0.0, 0.27)
+	# ATM: dark cabinet + small blue screen, right of the door.
+	_box(Vector3(0.16, 0.34, 0.10), Color("3b4048"), ground + Vector3(0.36, 0.0, 0.47))
+	_box(Vector3(0.10, 0.07, 0.02), Color("8fc1e8"), origin + Vector3(0.36, 0.26, 0.525))
+	# Planters flanking the entrance: terracotta box + leafy top.
+	for x in [-0.22, 0.22]:
+		_box(Vector3(0.14, 0.09, 0.14), Color("b06041"), ground + Vector3(x, 0.0, 0.44))
+		_box(Vector3(0.11, 0.10, 0.11), Color("61cb8b"), ground + Vector3(x, 0.09, 0.44))
 
 
 func _add_label(building: Node3D, text: String, height: float) -> void:
