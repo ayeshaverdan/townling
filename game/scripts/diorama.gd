@@ -117,7 +117,7 @@ func _setup_light() -> void:
 	# long, soft shadows that ground the diorama; the warm-sage backdrop and
 	# the colormap's warm families carry the mood.
 	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(-55.0), 0.0)
-	sun.light_energy = 1.0
+	sun.light_energy = 0.8
 	sun.light_color = Color("fff1dc")     # gently golden, ~5000K
 	sun.shadow_enabled = true
 	sun.shadow_opacity = 0.9
@@ -127,9 +127,9 @@ func _setup_light() -> void:
 	($Sun2 as DirectionalLight3D).visible = false
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
-	env.background_color = Color("c2c5aa")           # warm sage backdrop
+	env.background_color = Color("b2b69b")           # warm sage backdrop, a step deeper
 	env.ambient_light_color = Color("c6c8bc")        # sage-grey fill, cooler than sun
-	env.ambient_light_energy = 0.45
+	env.ambient_light_energy = 0.33
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
 
