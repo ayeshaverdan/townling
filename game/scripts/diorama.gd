@@ -100,28 +100,25 @@ func _capture_and_quit() -> void:
 # --- Scene construction ----------------------------------------------------
 
 func _setup_light() -> void:
-	# Cosy warm afternoon, matching the reference: golden key light, soft
-	# shadows, a warm ambient fill so pastels stay soft, muted blue-grey sky.
-	# Lighting replicated from Kenney's own Starter Kit scene
-	# (scenes/main.tscn + main-environment.tres in the upstream repo):
-	# a plain WHITE sun with SOFTENED shadows (opacity 0.75), a strong cool
-	# blue-grey ambient fill, a deeper blue-grey sky, and filmic tonemapping.
-	# That combination — not tinted lights — is what produces the kit's soft,
-	# cosy screenshot look. (Their SSAO/glow need Forward+; skipped on web.)
-	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
+	# Warm sun-drenched afternoon (target reference + researched practice:
+	# key light subtly warm — never a saturated hex — ambient slightly cooler
+	# for contrast, softened shadows). The LOW sun elevation is what gives the
+	# long, soft shadows that ground the diorama; the warm-sage backdrop and
+	# the colormap's warm families carry the mood.
+	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(-55.0), 0.0)
 	sun.light_energy = 1.0
-	sun.light_color = Color(1, 1, 1)
+	sun.light_color = Color("fff1dc")     # gently golden, ~5000K
 	sun.shadow_enabled = true
-	sun.shadow_opacity = 0.75
-	sun.shadow_blur = 1.0
+	sun.shadow_opacity = 0.9
+	sun.shadow_blur = 1.5
 
-	# Single-sun setup, as upstream; the counter-fill stays off.
+	# Single-sun setup; the counter-fill stays off.
 	($Sun2 as DirectionalLight3D).visible = false
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
-	env.background_color = Color(0.560784, 0.592157, 0.670588)      # kenney sky
-	env.ambient_light_color = Color(0.662745, 0.694118, 0.772549)   # cool fill
-	env.ambient_light_energy = 0.75
+	env.background_color = Color("c2c5aa")           # warm sage backdrop
+	env.ambient_light_color = Color("c6c8bc")        # sage-grey fill, cooler than sun
+	env.ambient_light_energy = 0.45
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
 
