@@ -1,0 +1,13 @@
+{
+	"comment": "Launch-tuning defaults per system spec §2/§8. All tunables are data, not code.",
+	"starter_wallet": 50,
+	"slots_per_day": 3,
+	"courier_shift": { "pay": 24, "tip": 4 },
+	"groceries": [
+		{ "id": "cheap", "label": "Cheap", "cost": 20 },
+		{ "id": "normal", "label": "Normal", "cost": 30 },
+		{ "id": "fancy", "label": "Fancy", "cost": 50 }
+	],
+	"rent_weekly": 60,
+	"savings_step": 10
+}

@@ -64,7 +64,13 @@ var _screen: Control
 var _card: PanelContainer
 var _screen_title: Label
 var _screen_body: Label
+var _actions: VBoxContainer
 var _screen_open := false
+var _current_screen := ""  # open landmark name; "Evening" for the day summary
+
+var _hud_day: Label
+var _hud_wallet: Label
+var _hud_slots: Label
 
 var _config_request: HTTPRequest
 var _health_request: HTTPRequest
@@ -76,6 +82,8 @@ func _ready() -> void:
 	_build_town()
 	_setup_camera()
 	_setup_ui()
+	GameState.changed.connect(_refresh_hud)
+	_refresh_hud()
 
 	if "--shot" in OS.get_cmdline_args():
 		_capture_and_quit()
@@ -101,6 +109,15 @@ func _capture_and_quit() -> void:
 		var dir2 := Vector3(1.0, 1.05, 1.0).normalized()
 		camera.position = focus2 + dir2 * 12.0
 		camera.look_at(focus2, Vector3.UP)
+	elif "--ui" in OS.get_cmdline_args():
+		# Exercise gameplay for the preview: one shift, then the Workplace screen.
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.work_shift()
+		for i in _picks.size():
+			if _picks[i]["name"] == "Workplace":
+				_open_screen(i)
+				break
 	for _i in range(6):
 		await get_tree().process_frame
 	var image := get_viewport().get_texture().get_image()
@@ -545,8 +562,28 @@ func _ray_aabb(ro: Vector3, rd: Vector3, box: AABB) -> float:
 
 func _open_screen(index: int) -> void:
 	var pick = _picks[index]
+	_current_screen = pick["name"]
 	_screen_title.text = pick["name"]
-	_screen_body.text = "%s\n\n(building screen — coming soon)" % pick["blurb"]
+	_screen_body.text = pick["blurb"]
+	_build_actions()
+	_show_card()
+
+
+## Evening summary (spec §3): three simple lines, then sleep.
+func _open_evening() -> void:
+	_current_screen = "Evening"
+	_screen_title.text = "Day %d — Evening" % GameState.day
+	var lines := "Earned  ↑  €%d\nSpent   ↓  €%d" % [
+		GameState.earned_today, GameState.spent_today]
+	if GameState.rent_due_tonight():
+		lines += "\nRent    ↓  €%d  (due tonight)" % GameState.rent_amount()
+	lines += "\nWallet  =  €%d" % GameState.wallet
+	_screen_body.text = lines
+	_build_actions()
+	_show_card()
+
+
+func _show_card() -> void:
 	_screen_open = true
 	_screen.visible = true
 	Sfx.play(SND_OPEN, -8.0)
@@ -554,7 +591,7 @@ func _open_screen(index: int) -> void:
 	var vp := get_viewport().get_visible_rect().size
 	_card.position = Vector2(16.0, vp.y)
 	var tween := create_tween()
-	tween.tween_property(_card, "position:y", 64.0, 0.25) \
+	tween.tween_property(_card, "position:y", CARD_TOP, 0.25) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
@@ -562,12 +599,115 @@ func _close_screen() -> void:
 	if not _screen_open:
 		return
 	_screen_open = false
+	var was := _current_screen
+	_current_screen = ""
 	Sfx.play(SND_CLOSE, -8.0)
 	var vp := get_viewport().get_visible_rect().size
 	var tween := create_tween()
 	tween.tween_property(_card, "position:y", vp.y, 0.2) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	tween.tween_callback(func() -> void: _screen.visible = false)
+	tween.tween_callback(func() -> void:
+		_screen.visible = false
+		# Dusk: when the last slot is spent, the evening summary follows
+		# (a natural stopping point, spec §3).
+		if was != "Evening" and GameState.slots_left <= 0:
+			_open_evening()
+	)
+
+
+# --- Per-building actions ----------------------------------------------------
+
+func _build_actions() -> void:
+	for child in _actions.get_children():
+		child.queue_free()
+	match _current_screen:
+		"Workplace":
+			var shift: Dictionary = GameState.econ.get("courier_shift", {})
+			var pay := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
+			var b := _action_button("Work a shift  ·  1 slot  ·  +€%d" % pay)
+			b.disabled = GameState.slots_left <= 0
+			b.pressed.connect(_do_shift)
+		"Shop":
+			for tier in GameState.econ.get("groceries", []):
+				var cost := int(tier.get("cost", 0))
+				var gb := _action_button("%s groceries  ·  1 slot  ·  −€%d" % [tier.get("label", "?"), cost])
+				gb.disabled = (
+					GameState.slots_left <= 0
+					or GameState.groceries_today != ""
+					or GameState.wallet < cost
+				)
+				var tid: String = tier.get("id", "")
+				gb.pressed.connect(func() -> void: _do_groceries(tid))
+			if GameState.groceries_today != "":
+				_screen_body.text += "\n\nYou already shopped today."
+		"Home":
+			var r := _action_button("Rest  ·  1 slot")
+			r.disabled = GameState.slots_left <= 0
+			r.pressed.connect(_do_rest)
+		"Bank":
+			_screen_body.text += "\n\nSavings jar:  €%d" % GameState.savings
+			var step := int(GameState.econ.get("savings_step", 10))
+			var d := _action_button("Deposit €%d" % step)
+			d.disabled = GameState.wallet < step
+			d.pressed.connect(func() -> void: _do_bank(step, true))
+			var w := _action_button("Withdraw €%d" % step)
+			w.disabled = GameState.savings < step
+			w.pressed.connect(func() -> void: _do_bank(step, false))
+		"Evening":
+			var s := _action_button("Sleep  💤")
+			s.pressed.connect(_do_sleep)
+		_:
+			_screen_body.text += "\n\n(coming soon)"
+
+
+func _action_button(text: String) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(0, 72)
+	b.add_theme_font_size_override("font_size", 28)
+	_actions.add_child(b)
+	return b
+
+
+func _do_shift() -> void:
+	var r: Dictionary = GameState.work_shift()
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	_screen_body.text = "Deliveries done — nice work!\n\n+€%d into your wallet." % r["amount"]
+	_build_actions()
+
+
+func _do_groceries(tier_id: String) -> void:
+	var r: Dictionary = GameState.buy_groceries(tier_id)
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	_screen_body.text = "%s groceries — the fridge is stocked.\n\n−€%d from your wallet." % [
+		r["label"], r["cost"]]
+	_build_actions()
+
+
+func _do_rest() -> void:
+	if not GameState.rest():
+		return
+	_screen_body.text = "You put your feet up. Tomorrow will be busy!"
+	_build_actions()
+
+
+func _do_bank(amount: int, into_savings: bool) -> void:
+	var ok := GameState.deposit(amount) if into_savings else GameState.withdraw(amount)
+	if not ok:
+		return
+	Sfx.play(SND_OPEN, -12.0)
+	_screen_body.text = "Your coins are safe in the jar." if into_savings \
+		else "Coins back in your pocket."
+	_build_actions()
+
+
+func _do_sleep() -> void:
+	GameState.end_day()
+	_close_screen()
 
 
 # --- UI --------------------------------------------------------------------
@@ -623,26 +763,86 @@ func _setup_ui() -> void:
 	header.add_child(close)
 
 	_screen_body = Label.new()
-	_screen_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_screen_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_screen_body.add_theme_color_override("font_color", Color("7a5410"))
 	_screen_body.add_theme_font_size_override("font_size", 30)
 	col.add_child(_screen_body)
 
+	_actions = VBoxContainer.new()
+	_actions.add_theme_constant_override("separation", 12)
+	col.add_child(_actions)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(spacer)
+
 	_size_card()
 
+	# --- HUD: day, wallet, energy slots (top-right; the wallet is the single
+	# always-visible number, design doc §13) ---------------------------------
+	var hud := VBoxContainer.new()
+	hud.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	hud.offset_left = -240.0
+	hud.offset_right = -20.0
+	hud.offset_top = 20.0
+	hud.add_theme_constant_override("separation", 4)
+	ui.add_child(hud)
+
+	_hud_day = Label.new()
+	_hud_day.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_day.add_theme_color_override("font_color", Color("2c2c2a"))
+	_hud_day.add_theme_font_size_override("font_size", 30)
+	hud.add_child(_hud_day)
+
+	var wallet_row := HBoxContainer.new()
+	wallet_row.alignment = BoxContainer.ALIGNMENT_END
+	wallet_row.add_theme_constant_override("separation", 8)
+	hud.add_child(wallet_row)
+
+	var coin := TextureRect.new()
+	coin.texture = load("res://assets/ui/coin.png")
+	coin.custom_minimum_size = Vector2(40, 40)
+	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	wallet_row.add_child(coin)
+
+	_hud_wallet = Label.new()
+	_hud_wallet.add_theme_color_override("font_color", Color("7a5410"))
+	_hud_wallet.add_theme_font_size_override("font_size", 40)
+	wallet_row.add_child(_hud_wallet)
+
+	_hud_slots = Label.new()
+	_hud_slots.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_slots.add_theme_color_override("font_color", Color("e7b24c"))
+	_hud_slots.add_theme_font_size_override("font_size", 30)
+	hud.add_child(_hud_slots)
+
+
+func _refresh_hud() -> void:
+	if _hud_day == null:
+		return
+	_hud_day.text = "Day %d" % GameState.day
+	_hud_wallet.text = "€%d" % GameState.wallet
+	var dots := ""
+	for i in int(GameState.econ.get("slots_per_day", 3)):
+		dots += "●  " if i < GameState.slots_left else "○  "
+	_hud_slots.text = dots.strip_edges()
+
+
+const CARD_TOP := 150.0
 
 func _size_card() -> void:
 	var vp := get_viewport().get_visible_rect().size
-	_card.custom_minimum_size = Vector2(vp.x - 32.0, vp.y - 96.0)
-	_card.size = Vector2(vp.x - 32.0, vp.y - 96.0)
+	var size := Vector2(vp.x - 32.0, vp.y - CARD_TOP - 32.0)
+	_card.custom_minimum_size = size
+	_card.size = size
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_SIZE_CHANGED and _card != null:
 		_size_card()
 		if _screen_open:
-			_card.position = Vector2(16.0, 64.0)
+			_card.position = Vector2(16.0, CARD_TOP)
 
 
 # --- Backend health overlay (retained from bootstrap) ----------------------

@@ -19,9 +19,11 @@ RUN mkdir -p ~/.local/share/godot/export_templates/ \
 
 COPY . .
 
-# Import resources once, then export. Fail loudly if the build is missing.
+# Import resources once, run the headless game-logic tests (a failing test
+# fails the build), then export. Fail loudly if the build is missing.
 RUN mkdir -p build \
  && (godot --headless --import 2>&1 | tail -n 5 || true) \
+ && godot --headless -s res://tests/test_game_state.gd 2>&1 | grep -E "PASSED|FAIL" \
  && godot --headless --export-release "Web" build/index.html 2>&1 | tail -n 30 \
  && test -f build/index.html
 
