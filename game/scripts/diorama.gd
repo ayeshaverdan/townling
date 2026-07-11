@@ -64,6 +64,7 @@ var _screen: Control
 var _card: PanelContainer
 var _screen_title: Label
 var _screen_body: Label
+var _close_btn: Button
 var _actions: VBoxContainer
 var _screen_open := false
 var _current_screen := ""  # open landmark name; "Evening" for the day summary
@@ -159,6 +160,15 @@ func _capture_and_quit() -> void:
 		GameState.wallet = 400
 		for i in 12:
 			GameState.fund_dream()
+	elif "--ui5" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("treehouse")
+		GameState.day = 3
+		GameState.wallet = 95
+		GameState.schedule_event("fridge_breaks", 3)
+		GameState.prepare_tonight()
+		_open_event()
 	elif "--dusk" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -670,6 +680,52 @@ func _update_home_badge() -> void:
 		_home_badge = null
 
 
+## The evening event card (spec §12: one situation, 2-3 priced choices).
+func _open_event() -> void:
+	var card: Dictionary = GameState.tonight_event()
+	if card.is_empty():
+		_open_evening()
+		return
+	_current_screen = "Event"
+	_screen_title.text = str(card.get("title", "Tonight"))
+	_screen_body.text = str(card.get("text", ""))
+	_build_actions()
+	if not _screen_open:
+		_show_card()
+
+
+func _event_choice_label(choice: Dictionary) -> String:
+	var label := str(choice.get("label", "?"))
+	var dw := int(choice.get("wallet", 0))
+	if dw < 0:
+		label += "  ·  −€%d" % (-dw)
+	elif dw > 0:
+		label += "  ·  +€%d" % dw
+	return label
+
+
+func _do_event_choice(choice_id: String) -> void:
+	var outcome: Dictionary = GameState.resolve_event_choice(choice_id)
+	if outcome.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	var lines: Array[String] = []
+	var dw := int(outcome.get("wallet", 0))
+	var dwb := int(outcome.get("wellbeing", 0))
+	if dw < 0:
+		lines.append("−€%d from your wallet." % (-dw))
+	elif dw > 0:
+		lines.append("+€%d into your wallet!" % dw)
+	if dwb != 0:
+		lines.append("Wellbeing %+d." % dwb)
+	if outcome.get("deferred", false):
+		lines.append("(That might come back to bite you…)")
+	if lines.is_empty():
+		lines.append("Done.")
+	_screen_body.text = "\n".join(lines)
+	_build_actions()
+
+
 ## Spec §9: the mentor-ordered Rest Day card (Aunt Vera's first cameo).
 func _open_rest_day() -> void:
 	_current_screen = "RestDay"
@@ -867,8 +923,9 @@ func _open_screen(index: int) -> void:
 	_show_card()
 
 
-## Evening summary (spec §3): three simple lines, then sleep.
+## Evening summary (spec §3): three simple lines, then the event slot, then sleep.
 func _open_evening() -> void:
+	GameState.prepare_tonight()
 	_current_screen = "Evening"
 	_screen_title.text = "Day %d — Evening" % GameState.day
 	var lines := "Earned  ↑  €%d\nSpent   ↓  €%d" % [
@@ -1007,13 +1064,36 @@ func _build_actions() -> void:
 			w.disabled = GameState.savings < step
 			w.pressed.connect(func() -> void: _do_bank(step, false))
 		"Evening":
-			var s := _action_button("Sleep  💤")
-			s.pressed.connect(_do_sleep)
+			if GameState.tonight_event_id != "":
+				var evb := _action_button("Something's happening outside…")
+				evb.pressed.connect(_open_event)
+			else:
+				var s := _action_button("Sleep  💤")
+				s.pressed.connect(_do_sleep)
 		"RestDay":
 			var ok := _action_button("Okay, I'll rest…")
 			ok.pressed.connect(_close_screen)
+		"Event":
+			var card: Dictionary = GameState.tonight_event()
+			if card.is_empty():
+				var zz := _action_button("Sleep  💤")
+				zz.pressed.connect(_do_sleep)
+			else:
+				for choice in card.get("choices", []):
+					var cb := _action_button(_event_choice_label(choice))
+					var cost := -int(choice.get("wallet", 0))
+					cb.disabled = cost > 0 and GameState.wallet < cost
+					var cid: String = choice.get("id", "")
+					cb.pressed.connect(func() -> void: _do_event_choice(cid))
 		_:
 			_screen_body.text += "\n\n(coming soon)"
+	# Must-answer screens have no escape hatch (dream pick, live event).
+	if _close_btn != null:
+		var must_answer := (
+			(_current_screen == "Dream" and GameState.dream_id == "")
+			or (_current_screen == "Event" and GameState.tonight_event_id != "")
+		)
+		_close_btn.visible = not must_answer
 
 
 func _action_button(text: String) -> Button:
@@ -1109,8 +1189,10 @@ func _setup_ui() -> void:
 	_screen.visible = false
 	_screen.gui_input.connect(func(e: InputEvent) -> void:
 		if e is InputEventMouseButton and e.pressed:
-			# The dream picker must be answered, not dismissed.
+			# The dream picker and tonight's event must be answered, not dismissed.
 			if _current_screen == "Dream" and GameState.dream_id == "":
+				return
+			if _current_screen == "Event" and GameState.tonight_event_id != "":
 				return
 			_close_screen()
 	)
@@ -1146,12 +1228,12 @@ func _setup_ui() -> void:
 	_screen_title.add_theme_font_size_override("font_size", 52)
 	header.add_child(_screen_title)
 
-	var close := Button.new()
-	close.text = "✕"
-	close.custom_minimum_size = Vector2(72, 72)
-	close.add_theme_font_size_override("font_size", 36)
-	close.pressed.connect(_close_screen)
-	header.add_child(close)
+	_close_btn = Button.new()
+	_close_btn.text = "✕"
+	_close_btn.custom_minimum_size = Vector2(72, 72)
+	_close_btn.add_theme_font_size_override("font_size", 36)
+	_close_btn.pressed.connect(_close_screen)
+	header.add_child(_close_btn)
 
 	_screen_body = Label.new()
 	_screen_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

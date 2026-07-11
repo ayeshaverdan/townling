@@ -12,6 +12,7 @@ extends Node
 signal changed
 
 const ECONOMY_PATH := "res://data/economy.json"
+const EVENTS_PATH := "res://data/events.json"
 const SAVE_PATH := "user://townling_save.json"
 
 var econ: Dictionary = {}
@@ -30,6 +31,14 @@ var zero_days: int = 0            # consecutive days ended at wellbeing 0
 var forced_rest_today: bool = false  # spec §9: mentor-ordered Rest Day
 var ledger: Array = []            # money activity: {d: day, t: label, a: +/-amount}
 
+# Evening event slot (spec §12: fixed slot, surprising content).
+var events: Dictionary = {}       # events.json parsed
+var tonight_event_id: String = "" # card queued for tonight ("" = quiet night)
+var tonight_prepared_day: int = 0 # idempotence guard for prepare_tonight()
+var pending_events: Array = []    # deferred consequences: {id, day}
+var last_event_id: String = ""    # avoid immediate repeats
+var rng := RandomNumberGenerator.new()
+
 const LEDGER_MAX := 40
 
 ## Disable to keep unit tests from touching user:// saves.
@@ -38,8 +47,20 @@ var autosave: bool = true
 
 func _ready() -> void:
 	load_economy()
+	load_events()
+	rng.randomize()
 	if not load_game():
 		init_new()
+
+
+func load_events() -> void:
+	var f := FileAccess.open(EVENTS_PATH, FileAccess.READ)
+	if f == null:
+		push_error("events.json missing")
+		return
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) == TYPE_DICTIONARY:
+		events = parsed
 
 
 func load_economy() -> void:
@@ -66,6 +87,10 @@ func init_new() -> void:
 	zero_days = 0
 	forced_rest_today = false
 	ledger = []
+	tonight_event_id = ""
+	tonight_prepared_day = 0
+	pending_events = []
+	last_event_id = ""
 	_after_change()
 
 
@@ -206,6 +231,90 @@ func _dream_def(id: String) -> Dictionary:
 	return {}
 
 
+# --- Evening events (spec §10/§12) --------------------------------------------
+
+## Decide tonight's card at dusk. Idempotent per day. Order of precedence:
+## day-1 scripted kindness -> due deferred consequence -> random draw.
+func prepare_tonight() -> void:
+	if tonight_prepared_day == day:
+		return
+	tonight_prepared_day = day
+	tonight_event_id = ""
+	if day == 1:
+		tonight_event_id = "found_coin"  # spec §2: night one never punishes
+		return
+	for i in pending_events.size():
+		if int(pending_events[i].get("day", 0)) <= day:
+			tonight_event_id = str(pending_events[i].get("id", ""))
+			pending_events.remove_at(i)
+			return
+	if rng.randf() >= float(events.get("nightly_chance", 0.4)):
+		return
+	var want_shock := rng.randf() < float(events.get("negative_share", 0.6))
+	var pool: Array = []
+	for card in events.get("cards", []):
+		if not bool(card.get("pool", true)):
+			continue
+		if card.get("id", "") == last_event_id:
+			continue
+		var is_shock: bool = card.get("type", "") == "shock"
+		if is_shock == want_shock:
+			pool.append(card)
+	if pool.is_empty():
+		return
+	tonight_event_id = str(pool[rng.randi_range(0, pool.size() - 1)].get("id", ""))
+
+
+func tonight_event() -> Dictionary:
+	return _event_def(tonight_event_id)
+
+
+## Apply a choice of tonight's card: wallet/wellbeing deltas, ledger entry,
+## and possibly a deferred follow-up ("ignored problems return worse").
+func resolve_event_choice(choice_id: String) -> Dictionary:
+	var card := tonight_event()
+	if card.is_empty():
+		return {}
+	for choice in card.get("choices", []):
+		if choice.get("id", "") != choice_id:
+			continue
+		var dw := int(choice.get("wallet", 0))
+		var dwb := int(choice.get("wellbeing", 0))
+		wallet += dw
+		if dw > 0:
+			earned_today += dw
+		elif dw < 0:
+			spent_today += -dw
+		wellbeing = clampi(wellbeing + dwb, 0, 100)
+		if dw != 0:
+			_log(str(choice.get("log", card.get("title", "Event"))), dw)
+		var deferred := false
+		if choice.has("defer"):
+			var df: Dictionary = choice["defer"]
+			if rng.randf() < float(df.get("chance", 0.0)):
+				schedule_event(str(df.get("id", "")),
+					day + rng.randi_range(int(df.get("min_days", 2)), int(df.get("max_days", 4))))
+				deferred = true
+		last_event_id = tonight_event_id
+		tonight_event_id = ""
+		_after_change()
+		return {"wallet": dw, "wellbeing": dwb, "deferred": deferred}
+	return {}
+
+
+func schedule_event(id: String, on_day: int) -> void:
+	pending_events.append({"id": id, "day": on_day})
+
+
+func _event_def(id: String) -> Dictionary:
+	if id == "":
+		return {}
+	for card in events.get("cards", []):
+		if card.get("id", "") == id:
+			return card
+	return {}
+
+
 # --- Day cycle ---------------------------------------------------------------
 
 ## Whether tonight's summary will include rent (every 7th day).
@@ -285,7 +394,9 @@ func save_game() -> void:
 		"spent_today": spent_today, "groceries_today": groceries_today,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
 		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
-		"ledger": ledger,
+		"ledger": ledger, "tonight_event_id": tonight_event_id,
+		"tonight_prepared_day": tonight_prepared_day,
+		"pending_events": pending_events, "last_event_id": last_event_id,
 	}))
 
 
@@ -311,5 +422,9 @@ func load_game() -> bool:
 	zero_days = int(parsed.get("zero_days", 0))
 	forced_rest_today = bool(parsed.get("forced_rest_today", false))
 	ledger = parsed.get("ledger", [])
+	tonight_event_id = str(parsed.get("tonight_event_id", ""))
+	tonight_prepared_day = int(parsed.get("tonight_prepared_day", 0))
+	pending_events = parsed.get("pending_events", [])
+	last_event_id = str(parsed.get("last_event_id", ""))
 	changed.emit()
 	return true

@@ -17,6 +17,7 @@ func _init() -> void:
 	var gs: Node = load("res://scripts/game_state.gd").new()
 	gs.autosave = false
 	gs.load_economy()
+	gs.load_events()
 	gs.init_new()
 
 	check(gs.wallet == 50, "starter wallet €50")
@@ -132,6 +133,43 @@ func _init() -> void:
 	for i in 60:
 		gs._log("test", 1)
 	check(gs.ledger.size() == 40, "ledger capped at 40")
+
+	# Evening events: day-1 kindness, deferred consequences, choice effects.
+	gs.init_new()
+	gs.prepare_tonight()
+	check(gs.tonight_event_id == "found_coin", "night one is the scripted kindness")
+	gs.prepare_tonight()
+	check(gs.tonight_event_id == "found_coin", "prepare is idempotent")
+	var w0: int = gs.wallet
+	var ev_r: Dictionary = gs.resolve_event_choice("take")
+	check(ev_r.get("wallet", 0) == 5 and gs.wallet == w0 + 5, "found coin +€5")
+	check(gs.tonight_event_id == "", "card resolved and cleared")
+
+	# Deferred follow-up fires on its due evening (chance forced to 1).
+	gs.end_day()
+	gs.schedule_event("phone_broken", gs.day)
+	gs.prepare_tonight()
+	check(gs.tonight_event_id == "phone_broken", "deferred card takes the slot")
+	gs.wallet = 100
+	var pb: Dictionary = gs.resolve_event_choice("replace_now")
+	check(pb.get("wallet", 0) == -90 and gs.wallet == 10, "worse repair costs €90")
+	var pb_logged := false
+	for e in gs.ledger:
+		if e.get("t") == "Phone fix (worse)":
+			pb_logged = true
+	check(pb_logged, "event cost in ledger")
+
+	# Choice with defer chance 1.0 always schedules the follow-up.
+	gs.end_day()
+	gs.schedule_event("phone_cracks", gs.day)
+	gs.prepare_tonight()
+	var card: Dictionary = gs.tonight_event()
+	for c in card.get("choices", []):
+		if c.get("id") == "live_with":
+			c["defer"]["chance"] = 1.0
+	gs.resolve_event_choice("live_with")
+	check(gs.pending_events.size() == 1, "ignored problem scheduled to return")
+	check(str(gs.pending_events[0].get("id")) == "phone_broken", "…as the worse card")
 
 	if failures == 0:
 		print("ALL TESTS PASSED")
