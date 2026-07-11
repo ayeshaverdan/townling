@@ -70,7 +70,13 @@ var _current_screen := ""  # open landmark name; "Evening" for the day summary
 
 var _hud_day: Label
 var _hud_wallet: Label
-var _hud_slots: Label
+var _hud_bolts: Array[TextureRect] = []
+var _hud_heart: ProgressBar
+var _hud_dream_label: Label
+var _hud_dream_bar: ProgressBar
+
+var _dream_spot: Node3D
+var _dream_spot_key := ""  # rebuild ghost only when dream/progress bucket changes
 
 var _config_request: HTTPRequest
 var _health_request: HTTPRequest
@@ -88,6 +94,11 @@ func _ready() -> void:
 	if "--shot" in OS.get_cmdline_args():
 		_capture_and_quit()
 		return
+
+	# Day 1, minute 2 (spec §2): the dream is chosen before anything else —
+	# it is the answer to "why do we need money?".
+	if GameState.dream_id == "":
+		_open_dream_picker.call_deferred()
 
 	_config_request = HTTPRequest.new()
 	_health_request = HTTPRequest.new()
@@ -116,6 +127,29 @@ func _capture_and_quit() -> void:
 		GameState.work_shift()
 		for i in _picks.size():
 			if _picks[i]["name"] == "Workplace":
+				_open_screen(i)
+				break
+	elif "--dream" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("treehouse")
+		GameState.wallet = 400
+		for i in 12:
+			GameState.fund_dream()
+	elif "--ui2" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		_open_dream_picker()
+	elif "--ui3" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("treehouse")
+		GameState.wallet = 210
+		GameState.fund_dream()
+		GameState.fund_dream()
+		GameState.fund_dream()
+		for i in _picks.size():
+			if _picks[i]["name"] == "Home":
 				_open_screen(i)
 				break
 	for _i in range(6):
@@ -204,7 +238,7 @@ func _build_town() -> void:
 		Vector2i(0, 1), Vector2i(2, 1), Vector2i(4, 1), Vector2i(6, 1),
 		Vector2i(0, 5), Vector2i(2, 5), Vector2i(4, 5), Vector2i(6, 5),
 		Vector2i(0, 6), Vector2i(2, 6), Vector2i(4, 6),
-		Vector2i(5, 6), Vector2i(6, 6),
+		Vector2i(5, 6),
 	]
 	var tall := true
 	for cell in tree_cells:
@@ -214,6 +248,7 @@ func _build_town() -> void:
 	# A fountain centrepiece in the front park, and a little sidewalk colour.
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
 	_scatter_confetti()
+	_update_dream_spot()
 
 	# Street life: cars on the two lanes, a delivery truck by the Shop.
 	# (Car Kit uses a larger unit scale; ~0.18 fits our 1x1 tiles.)
@@ -464,6 +499,89 @@ func _decorate_notice_board(origin: Vector3) -> void:
 		root.add_child(note)
 
 
+# --- The dream on the diorama (design doc §8: dotted outline that fills) -----
+
+const DREAM_CELL := Vector2i(6, 6)
+
+## Rebuild the ghost when the dream or its progress bucket changes. The dream
+## starts as a pale ghost and solidifies as it is funded; complete = gold.
+func _update_dream_spot() -> void:
+	var key := "%s:%d:%s" % [
+		GameState.dream_id, int(GameState.dream_progress() * 10.0),
+		str(GameState.dream_complete())]
+	if key == _dream_spot_key:
+		return
+	_dream_spot_key = key
+	if _dream_spot != null:
+		_dream_spot.queue_free()
+		_dream_spot = null
+	if GameState.dream_id == "":
+		return
+
+	_dream_spot = Node3D.new()
+	_dream_spot.position = Vector3(DREAM_CELL.x * TILE, GROUND_Y, DREAM_CELL.y * TILE)
+	world.add_child(_dream_spot)
+
+	var mat := StandardMaterial3D.new()
+	if GameState.dream_complete():
+		mat.albedo_color = Color(0.95, 0.83, 0.5, 1.0)   # solid gold — it's real!
+	else:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(1, 1, 1, 0.22 + 0.55 * GameState.dream_progress())
+	mat.roughness = 0.9
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+
+	match GameState.dream_id:
+		"treehouse":
+			_dream_mesh(_box_mesh(Vector3(0.12, 0.5, 0.12)), Vector3(0, 0.25, 0), mat)
+			_dream_mesh(_box_mesh(Vector3(0.44, 0.05, 0.44)), Vector3(0, 0.52, 0), mat)
+			_dream_mesh(_box_mesh(Vector3(0.3, 0.22, 0.3)), Vector3(0, 0.65, 0), mat)
+			_dream_mesh(_prism_mesh(Vector3(0.36, 0.16, 0.36)), Vector3(0, 0.84, 0), mat)
+		"puppy":
+			_dream_mesh(_box_mesh(Vector3(0.34, 0.26, 0.34)), Vector3(0, 0.13, 0), mat)
+			_dream_mesh(_prism_mesh(Vector3(0.4, 0.18, 0.4)), Vector3(0, 0.35, 0), mat)
+		"ocean":
+			_dream_mesh(_box_mesh(Vector3(0.5, 0.1, 0.2)), Vector3(0, 0.1, 0), mat)
+			_dream_mesh(_box_mesh(Vector3(0.03, 0.34, 0.03)), Vector3(0, 0.32, 0), mat)
+			_dream_mesh(_prism_mesh(Vector3(0.26, 0.24, 0.02)), Vector3(0.13, 0.32, 0), mat)
+		"ramp":
+			_dream_mesh(_prism_mesh(Vector3(0.3, 0.22, 0.36)), Vector3(-0.18, 0.11, 0), mat, 90.0)
+			_dream_mesh(_prism_mesh(Vector3(0.3, 0.22, 0.36)), Vector3(0.18, 0.11, 0), mat, -90.0)
+
+	var tag := Label3D.new()
+	tag.text = "MY DREAM" if not GameState.dream_complete() else "DREAM COME TRUE!"
+	tag.font = _font
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.pixel_size = 0.003
+	tag.font_size = 30
+	tag.modulate = Color("7a5410")
+	tag.outline_size = 8
+	tag.outline_modulate = Color(1, 1, 1, 0.9)
+	tag.position = Vector3(0, 1.15, 0)
+	_dream_spot.add_child(tag)
+
+
+func _dream_mesh(mesh: Mesh, pos: Vector3, mat: Material, rot_deg: float = 0.0) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation.y = deg_to_rad(rot_deg)
+	_dream_spot.add_child(mi)
+
+
+func _box_mesh(size: Vector3) -> BoxMesh:
+	var m := BoxMesh.new()
+	m.size = size
+	return m
+
+
+func _prism_mesh(size: Vector3) -> PrismMesh:
+	var m := PrismMesh.new()
+	m.size = size
+	return m
+
+
 ## A little scattered colour on the sidewalks (fixed, deterministic).
 func _scatter_confetti() -> void:
 	var spots := [
@@ -578,6 +696,10 @@ func _open_evening() -> void:
 	if GameState.rent_due_tonight():
 		lines += "\nRent    ↓  €%d  (due tonight)" % GameState.rent_amount()
 	lines += "\nWallet  =  €%d" % GameState.wallet
+	if GameState.groceries_today == "":
+		lines += "\n\nNo dinner tonight — that will hurt tomorrow!"
+	if GameState.dream_id != "" and not GameState.dream_complete():
+		lines += "\nDream fund:  €%d / €%d" % [GameState.dream_saved, GameState.dream_cost()]
 	_screen_body.text = lines
 	_build_actions()
 	_show_card()
@@ -617,10 +739,28 @@ func _close_screen() -> void:
 
 # --- Per-building actions ----------------------------------------------------
 
+## Day-1 dream picker (spec §2 minute 2-3): install the pull before the grind.
+func _open_dream_picker() -> void:
+	_current_screen = "Dream"
+	_screen_title.text = "Choose your dream!"
+	_screen_body.text = "What are you saving up for? Everything you earn in Townling can bring it closer."
+	_build_actions()
+	_show_card()
+
+
 func _build_actions() -> void:
 	for child in _actions.get_children():
 		child.queue_free()
 	match _current_screen:
+		"Dream":
+			if GameState.dream_id == "":
+				for d in GameState.econ.get("dreams", []):
+					var db := _action_button("%s  ·  €%d" % [d.get("label", "?"), int(d.get("cost", 0))])
+					var did: String = d.get("id", "")
+					db.pressed.connect(func() -> void: _pick_dream(did))
+			else:
+				var go := _action_button("Let's go!")
+				go.pressed.connect(_close_screen)
 		"Workplace":
 			var shift: Dictionary = GameState.econ.get("courier_shift", {})
 			var pay := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
@@ -641,9 +781,22 @@ func _build_actions() -> void:
 			if GameState.groceries_today != "":
 				_screen_body.text += "\n\nYou already shopped today."
 		"Home":
-			var r := _action_button("Rest  ·  1 slot")
+			var days_left := 7 - ((GameState.day - 1) % 7 + 1)
+			var rent_line := "Rent €%d is due tonight!" % GameState.rent_amount() \
+				if GameState.rent_due_tonight() else \
+				"Rent €%d due in %d day%s." % [GameState.rent_amount(), days_left, "" if days_left == 1 else "s"]
+			_screen_body.text += "\n\n" + rent_line
+			if GameState.dream_id != "" and not GameState.dream_complete():
+				_screen_body.text += "\nDream:  %s  €%d / €%d" % [
+					GameState.dream_def().get("label", ""), GameState.dream_saved, GameState.dream_cost()]
+			var r := _action_button("Rest  ·  1 slot  ·  wellbeing up")
 			r.disabled = GameState.slots_left <= 0
 			r.pressed.connect(_do_rest)
+			if GameState.dream_id != "" and not GameState.dream_complete():
+				var step := int(GameState.econ.get("dream_step", 25))
+				var fd := _action_button("Put €%d toward your dream" % step)
+				fd.disabled = GameState.wallet <= 0
+				fd.pressed.connect(_do_fund_dream)
 		"Bank":
 			_screen_body.text += "\n\nSavings jar:  €%d" % GameState.savings
 			var step := int(GameState.econ.get("savings_step", 10))
@@ -669,12 +822,37 @@ func _action_button(text: String) -> Button:
 	return b
 
 
+func _pick_dream(id: String) -> void:
+	if not GameState.select_dream(id):
+		return
+	Sfx.play(SND_OPEN, -8.0)
+	_screen_body.text = "A %s! Wonderful choice.\n\nLook for the ghostly outline in town — every coin you put toward it makes it more real." % GameState.dream_def().get("label", "")
+	_build_actions()
+
+
+func _do_fund_dream() -> void:
+	var r: Dictionary = GameState.fund_dream()
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	if r.get("completed", false):
+		_screen_body.text = "YOU DID IT! Your %s is real!\n\nGo look at it in town — you earned every coin of it." % GameState.dream_def().get("label", "")
+	else:
+		_screen_body.text = "€%d closer to your %s!\n\nDream fund:  €%d / €%d" % [
+			r["added"], GameState.dream_def().get("label", ""),
+			GameState.dream_saved, GameState.dream_cost()]
+	_build_actions()
+
+
 func _do_shift() -> void:
 	var r: Dictionary = GameState.work_shift()
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
-	_screen_body.text = "Deliveries done — nice work!\n\n+€%d into your wallet." % r["amount"]
+	if r.get("tired", false):
+		_screen_body.text = "Deliveries done… but you're worn out, so it went slowly.\n\n+€%d (tired pay). Some rest would help!" % r["amount"]
+	else:
+		_screen_body.text = "Deliveries done — nice work!\n\n+€%d into your wallet." % r["amount"]
 	_build_actions()
 
 
@@ -691,7 +869,7 @@ func _do_groceries(tier_id: String) -> void:
 func _do_rest() -> void:
 	if not GameState.rest():
 		return
-	_screen_body.text = "You put your feet up. Tomorrow will be busy!"
+	_screen_body.text = "You put your feet up and recharge. Wellbeing up!"
 	_build_actions()
 
 
@@ -721,6 +899,9 @@ func _setup_ui() -> void:
 	_screen.visible = false
 	_screen.gui_input.connect(func(e: InputEvent) -> void:
 		if e is InputEventMouseButton and e.pressed:
+			# The dream picker must be answered, not dismissed.
+			if _current_screen == "Dream" and GameState.dream_id == "":
+				return
 			_close_screen()
 	)
 	ui.add_child(_screen)
@@ -782,16 +963,16 @@ func _setup_ui() -> void:
 	# always-visible number, design doc §13) ---------------------------------
 	var hud := VBoxContainer.new()
 	hud.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	hud.offset_left = -240.0
+	hud.offset_left = -340.0
 	hud.offset_right = -20.0
-	hud.offset_top = 20.0
+	hud.offset_top = 16.0
 	hud.add_theme_constant_override("separation", 4)
 	ui.add_child(hud)
 
 	_hud_day = Label.new()
 	_hud_day.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_hud_day.add_theme_color_override("font_color", Color("2c2c2a"))
-	_hud_day.add_theme_font_size_override("font_size", 30)
+	_hud_day.add_theme_font_size_override("font_size", 24)
 	hud.add_child(_hud_day)
 
 	var wallet_row := HBoxContainer.new()
@@ -799,23 +980,69 @@ func _setup_ui() -> void:
 	wallet_row.add_theme_constant_override("separation", 8)
 	hud.add_child(wallet_row)
 
-	var coin := TextureRect.new()
-	coin.texture = load("res://assets/ui/coin.png")
-	coin.custom_minimum_size = Vector2(40, 40)
-	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	wallet_row.add_child(coin)
-
 	_hud_wallet = Label.new()
 	_hud_wallet.add_theme_color_override("font_color", Color("7a5410"))
-	_hud_wallet.add_theme_font_size_override("font_size", 40)
+	_hud_wallet.add_theme_font_size_override("font_size", 34)
 	wallet_row.add_child(_hud_wallet)
+	wallet_row.add_child(_hud_icon("res://assets/ui/coin.png", 36))
 
-	_hud_slots = Label.new()
-	_hud_slots.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hud_slots.add_theme_color_override("font_color", Color("e7b24c"))
-	_hud_slots.add_theme_font_size_override("font_size", 30)
-	hud.add_child(_hud_slots)
+	# Energy bolts (the day's 3 slots).
+	var bolt_row := HBoxContainer.new()
+	bolt_row.alignment = BoxContainer.ALIGNMENT_END
+	bolt_row.add_theme_constant_override("separation", 2)
+	hud.add_child(bolt_row)
+	for i in int(GameState.econ.get("slots_per_day", 3)):
+		var bolt := _hud_icon("res://assets/ui/bolt.png", 30)
+		bolt_row.add_child(bolt)
+		_hud_bolts.append(bolt)
+
+	# Wellbeing: heart + bar.
+	var heart_row := HBoxContainer.new()
+	heart_row.alignment = BoxContainer.ALIGNMENT_END
+	heart_row.add_theme_constant_override("separation", 6)
+	hud.add_child(heart_row)
+	heart_row.add_child(_hud_icon("res://assets/ui/heart.png", 28))
+	_hud_heart = _hud_bar(Color("e24b4a"), Vector2(110, 14))
+	heart_row.add_child(_hud_heart)
+
+	# The dream: star + progress toward the goal.
+	var dream_row := HBoxContainer.new()
+	dream_row.alignment = BoxContainer.ALIGNMENT_END
+	dream_row.add_theme_constant_override("separation", 6)
+	hud.add_child(dream_row)
+	dream_row.add_child(_hud_icon("res://assets/ui/star.png", 28))
+	_hud_dream_label = Label.new()
+	_hud_dream_label.add_theme_color_override("font_color", Color("7a5410"))
+	_hud_dream_label.add_theme_font_size_override("font_size", 20)
+	dream_row.add_child(_hud_dream_label)
+	_hud_dream_bar = _hud_bar(Color("e7b24c"), Vector2(84, 14))
+	dream_row.add_child(_hud_dream_bar)
+
+
+func _hud_icon(path: String, px: int) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.texture = load(path)
+	icon.custom_minimum_size = Vector2(px, px)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	return icon
+
+
+func _hud_bar(fill: Color, size: Vector2) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.show_percentage = false
+	bar.custom_minimum_size = size
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.max_value = 100.0
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.2, 0.19, 0.17, 0.35)
+	bg.set_corner_radius_all(8)
+	var fg := StyleBoxFlat.new()
+	fg.bg_color = fill
+	fg.set_corner_radius_all(8)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fg)
+	return bar
 
 
 func _refresh_hud() -> void:
@@ -823,13 +1050,22 @@ func _refresh_hud() -> void:
 		return
 	_hud_day.text = "Day %d" % GameState.day
 	_hud_wallet.text = "€%d" % GameState.wallet
-	var dots := ""
-	for i in int(GameState.econ.get("slots_per_day", 3)):
-		dots += "●  " if i < GameState.slots_left else "○  "
-	_hud_slots.text = dots.strip_edges()
+	for i in _hud_bolts.size():
+		_hud_bolts[i].modulate.a = 1.0 if i < GameState.slots_left else 0.2
+	_hud_heart.value = float(GameState.wellbeing)
+	if GameState.dream_id == "":
+		_hud_dream_label.text = "pick a dream!"
+		_hud_dream_bar.value = 0.0
+	elif GameState.dream_complete():
+		_hud_dream_label.text = "%s  ✔" % GameState.dream_def().get("label", "")
+		_hud_dream_bar.value = 100.0
+	else:
+		_hud_dream_label.text = "€%d/€%d" % [GameState.dream_saved, GameState.dream_cost()]
+		_hud_dream_bar.value = GameState.dream_progress() * 100.0
+	_update_dream_spot()
 
 
-const CARD_TOP := 150.0
+const CARD_TOP := 196.0
 
 func _size_card() -> void:
 	var vp := get_viewport().get_visible_rect().size

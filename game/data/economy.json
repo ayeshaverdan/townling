@@ -1,13 +1,28 @@
 {
-	"comment": "Launch-tuning defaults per system spec §2/§8. All tunables are data, not code.",
+	"comment": "Launch-tuning defaults per system spec §2/§8/§9/§12. All tunables are data, not code.",
 	"starter_wallet": 50,
 	"slots_per_day": 3,
 	"courier_shift": { "pay": 24, "tip": 4 },
 	"groceries": [
-		{ "id": "cheap", "label": "Cheap", "cost": 20 },
-		{ "id": "normal", "label": "Normal", "cost": 30 },
-		{ "id": "fancy", "label": "Fancy", "cost": 50 }
+		{ "id": "cheap", "label": "Cheap", "cost": 20, "wellbeing": -5 },
+		{ "id": "normal", "label": "Normal", "cost": 30, "wellbeing": 0 },
+		{ "id": "fancy", "label": "Fancy", "cost": 50, "wellbeing": 5 }
 	],
+	"no_food_penalty": 10,
 	"rent_weekly": 60,
-	"savings_step": 10
+	"savings_step": 10,
+	"dream_step": 25,
+	"dreams": [
+		{ "id": "treehouse", "label": "Treehouse", "cost": 600 },
+		{ "id": "puppy", "label": "Own puppy", "cost": 450 },
+		{ "id": "ocean", "label": "Ocean trip", "cost": 500 },
+		{ "id": "ramp", "label": "Skate ramp", "cost": 650 }
+	],
+	"wellbeing": {
+		"start": 70,
+		"daily_drift": -5,
+		"rest_gain": 20,
+		"low_threshold": 30,
+		"low_pay_mult": 0.8
+	}
 }

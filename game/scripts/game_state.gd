@@ -23,6 +23,9 @@ var slots_left: int = 3
 var earned_today: int = 0
 var spent_today: int = 0
 var groceries_today: String = ""  # grocery tier id bought today ("" = none)
+var wellbeing: int = 70           # 0-100 (spec §9); low wellbeing reduces pay
+var dream_id: String = ""         # the dream (design doc §8) — "" until chosen
+var dream_saved: int = 0          # coins put toward the dream so far
 
 ## Disable to keep unit tests from touching user:// saves.
 var autosave: bool = true
@@ -52,6 +55,9 @@ func init_new() -> void:
 	earned_today = 0
 	spent_today = 0
 	groceries_today = ""
+	wellbeing = int(_wb().get("start", 70))
+	dream_id = ""
+	dream_saved = 0
 	_after_change()
 
 
@@ -63,11 +69,14 @@ func work_shift() -> Dictionary:
 		return {}
 	var shift: Dictionary = econ.get("courier_shift", {})
 	var amount := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
+	var tired := wellbeing < int(_wb().get("low_threshold", 30))
+	if tired:
+		amount = int(amount * float(_wb().get("low_pay_mult", 0.8)))
 	slots_left -= 1
 	wallet += amount
 	earned_today += amount
 	_after_change()
-	return {"amount": amount}
+	return {"amount": amount, "tired": tired}
 
 
 ## Buy groceries (one tier per day): one slot.
@@ -88,11 +97,12 @@ func buy_groceries(tier_id: String) -> Dictionary:
 	return {"cost": cost, "label": tier.get("label", tier_id)}
 
 
-## Rest: one slot. (Refills wellbeing once the meter exists — spec §9.)
+## Rest: one slot; refills wellbeing (spec §9 — rest is a resource).
 func rest() -> bool:
 	if slots_left <= 0:
 		return false
 	slots_left -= 1
+	wellbeing = clampi(wellbeing + int(_wb().get("rest_gain", 20)), 0, 100)
 	_after_change()
 	return true
 
@@ -117,6 +127,56 @@ func withdraw(amount: int) -> bool:
 	return true
 
 
+# --- The dream (design doc §8: the reason to earn) ----------------------------
+
+func select_dream(id: String) -> bool:
+	if dream_id != "" or _dream_def(id).is_empty():
+		return false
+	dream_id = id
+	dream_saved = 0
+	_after_change()
+	return true
+
+
+func dream_def() -> Dictionary:
+	return _dream_def(dream_id)
+
+
+func dream_cost() -> int:
+	return int(dream_def().get("cost", 0))
+
+
+func dream_progress() -> float:
+	var cost := dream_cost()
+	return 0.0 if cost == 0 else clampf(float(dream_saved) / float(cost), 0.0, 1.0)
+
+
+func dream_complete() -> bool:
+	return dream_id != "" and dream_saved >= dream_cost() and dream_cost() > 0
+
+
+## Put coins toward the dream (design doc §8: money is the bridge to it).
+func fund_dream() -> Dictionary:
+	if dream_id == "" or dream_complete():
+		return {}
+	var step := int(econ.get("dream_step", 25))
+	var amount: int = mini(step, mini(dream_cost() - dream_saved, wallet))
+	if amount <= 0:
+		return {}
+	wallet -= amount
+	dream_saved += amount
+	spent_today += amount
+	_after_change()
+	return {"added": amount, "completed": dream_complete()}
+
+
+func _dream_def(id: String) -> Dictionary:
+	for d in econ.get("dreams", []):
+		if d.get("id", "") == id:
+			return d
+	return {}
+
+
 # --- Day cycle ---------------------------------------------------------------
 
 ## Whether tonight's summary will include rent (every 7th day).
@@ -128,8 +188,15 @@ func rent_amount() -> int:
 	return int(econ.get("rent_weekly", 60))
 
 
-## Close the day: charge rent on day 7/14/…, then start the next morning.
+## Close the day: overnight wellbeing (drift + tonight's food), rent on
+## day 7/14/…, then the next morning.
 func end_day() -> void:
+	var delta := int(_wb().get("daily_drift", -5))
+	if groceries_today == "":
+		delta -= int(econ.get("no_food_penalty", 10))
+	else:
+		delta += int(_grocery_tier(groceries_today).get("wellbeing", 0))
+	wellbeing = clampi(wellbeing + delta, 0, 100)
 	if rent_due_tonight():
 		wallet -= rent_amount()
 	day += 1
@@ -141,6 +208,10 @@ func end_day() -> void:
 
 
 # --- Helpers / persistence ---------------------------------------------------
+
+func _wb() -> Dictionary:
+	return econ.get("wellbeing", {})
+
 
 func _grocery_tier(tier_id: String) -> Dictionary:
 	for tier in econ.get("groceries", []):
@@ -164,6 +235,7 @@ func save_game() -> void:
 		"wallet": wallet, "savings": savings, "day": day,
 		"slots_left": slots_left, "earned_today": earned_today,
 		"spent_today": spent_today, "groceries_today": groceries_today,
+		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
 	}))
 
 
@@ -183,5 +255,8 @@ func load_game() -> bool:
 	earned_today = int(parsed.get("earned_today", 0))
 	spent_today = int(parsed.get("spent_today", 0))
 	groceries_today = str(parsed.get("groceries_today", ""))
+	wellbeing = int(parsed.get("wellbeing", 70))
+	dream_id = str(parsed.get("dream_id", ""))
+	dream_saved = int(parsed.get("dream_saved", 0))
 	changed.emit()
 	return true
