@@ -28,6 +28,9 @@ var dream_id: String = ""         # the dream (design doc §8) — "" until chos
 var dream_saved: int = 0          # coins put toward the dream so far
 var zero_days: int = 0            # consecutive days ended at wellbeing 0
 var forced_rest_today: bool = false  # spec §9: mentor-ordered Rest Day
+var ledger: Array = []            # money activity: {d: day, t: label, a: +/-amount}
+
+const LEDGER_MAX := 40
 
 ## Disable to keep unit tests from touching user:// saves.
 var autosave: bool = true
@@ -62,6 +65,7 @@ func init_new() -> void:
 	dream_saved = 0
 	zero_days = 0
 	forced_rest_today = false
+	ledger = []
 	_after_change()
 
 
@@ -76,6 +80,7 @@ func work_shift() -> Dictionary:
 	slots_left -= 1
 	wallet += amount
 	earned_today += amount
+	_log("Courier shift", amount)
 	_after_change()
 	return {"amount": amount, "tier": preview.get("tier", "fine"),
 		"bonus": preview.get("bonus", 0)}
@@ -113,6 +118,7 @@ func buy_groceries(tier_id: String) -> Dictionary:
 	wallet -= cost
 	spent_today += cost
 	groceries_today = tier_id
+	_log("%s groceries" % tier.get("label", tier_id), -cost)
 	_after_change()
 	return {"cost": cost, "label": tier.get("label", tier_id)}
 
@@ -134,6 +140,7 @@ func deposit(amount: int) -> bool:
 		return false
 	wallet -= amount
 	savings += amount
+	_log("Into savings jar", -amount)
 	_after_change()
 	return true
 
@@ -143,6 +150,7 @@ func withdraw(amount: int) -> bool:
 		return false
 	savings -= amount
 	wallet += amount
+	_log("From savings jar", amount)
 	_after_change()
 	return true
 
@@ -186,6 +194,7 @@ func fund_dream() -> Dictionary:
 	wallet -= amount
 	dream_saved += amount
 	spent_today += amount
+	_log("Dream fund", -amount)
 	_after_change()
 	return {"added": amount, "completed": dream_complete()}
 
@@ -219,6 +228,7 @@ func end_day() -> void:
 	wellbeing = clampi(wellbeing + delta, 0, 100)
 	if rent_due_tonight():
 		wallet -= rent_amount()
+		_log("Rent", -rent_amount())
 	day += 1
 	slots_left = int(econ.get("slots_per_day", 3))
 	# Spec §9 caring floor: two straight days ended empty -> the mentor
@@ -240,6 +250,12 @@ func end_day() -> void:
 
 
 # --- Helpers / persistence ---------------------------------------------------
+
+func _log(label: String, amount: int) -> void:
+	ledger.append({"d": day, "t": label, "a": amount})
+	while ledger.size() > LEDGER_MAX:
+		ledger.pop_front()
+
 
 func _wb() -> Dictionary:
 	return econ.get("wellbeing", {})
@@ -269,6 +285,7 @@ func save_game() -> void:
 		"spent_today": spent_today, "groceries_today": groceries_today,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
 		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
+		"ledger": ledger,
 	}))
 
 
@@ -293,5 +310,6 @@ func load_game() -> bool:
 	dream_saved = int(parsed.get("dream_saved", 0))
 	zero_days = int(parsed.get("zero_days", 0))
 	forced_rest_today = bool(parsed.get("forced_rest_today", false))
+	ledger = parsed.get("ledger", [])
 	changed.emit()
 	return true

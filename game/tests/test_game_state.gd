@@ -118,6 +118,21 @@ func _init() -> void:
 	check(not gs.forced_rest_today, "normal day after rest")
 	check(gs.slots_left == 3, "slots back")
 
+	# Ledger: every wallet movement is recorded and explained.
+	check(gs.ledger.size() > 0, "ledger has entries")
+	var rent_logged := false
+	var shift_logged := false
+	for e in gs.ledger:
+		if e.get("t") == "Rent" and e.get("a") == -60:
+			rent_logged = true
+		if e.get("t") == "Courier shift":
+			shift_logged = true
+	check(rent_logged, "rent -60 explained in ledger")
+	check(shift_logged, "shifts appear in ledger")
+	for i in 60:
+		gs._log("test", 1)
+	check(gs.ledger.size() == 40, "ledger capped at 40")
+
 	if failures == 0:
 		print("ALL TESTS PASSED")
 		quit(0)

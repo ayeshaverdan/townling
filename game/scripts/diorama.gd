@@ -81,6 +81,24 @@ var _hud_heart_icon: TextureRect
 var _home_badge: Label3D
 var _blink_time := 0.0
 
+# Living city: drifting clouds, driving cars, and a day arc tied to slots.
+var _clouds: Array = []      # [{node, speed}]
+var _cars: Array = []        # [{node, speed, dir}]
+var _sun_disc: MeshInstance3D
+var _moon_disc: MeshInstance3D
+var _sun_disc_mat: StandardMaterial3D
+var _moon_disc_mat: StandardMaterial3D
+var _env: Environment
+
+## Day-arc targets per phase (0=morning … 3=dusk): sun energy, colour,
+## elevation, ambient energy, background colour.
+const DAY_PHASES := [
+	{"e": 0.85, "col": Color("fff1dc"), "rot": -45.0, "amb": 0.36, "bg": Color("b2b69b")},
+	{"e": 0.9, "col": Color("fff6e8"), "rot": -50.0, "amb": 0.33, "bg": Color("b2b69b")},
+	{"e": 0.75, "col": Color("ffdfb0"), "rot": -35.0, "amb": 0.30, "bg": Color("aca789")},
+	{"e": 0.38, "col": Color("ffc890"), "rot": -22.0, "amb": 0.20, "bg": Color("8f8ba0")},
+]
+
 var _config_request: HTTPRequest
 var _health_request: HTTPRequest
 
@@ -141,6 +159,14 @@ func _capture_and_quit() -> void:
 		GameState.wallet = 400
 		for i in 12:
 			GameState.fund_dream()
+	elif "--dusk" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("treehouse")
+		GameState.slots_left = 0
+		# let the lerp settle for the capture
+		for i in 90:
+			_update_city_life(0.1)
 	elif "--ui4" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -189,6 +215,7 @@ func _setup_light() -> void:
 	($Sun2 as DirectionalLight3D).visible = false
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
+	_env = env
 	env.background_color = Color("b2b69b")           # warm sage backdrop, a step deeper
 	env.ambient_light_color = Color("c6c8bc")        # sage-grey fill, cooler than sun
 	env.ambient_light_energy = 0.33
@@ -262,11 +289,13 @@ func _build_town() -> void:
 	_update_dream_spot()
 	_update_home_badge()
 
-	# Street life: cars on the two lanes, a delivery truck by the Shop.
-	# (Car Kit uses a larger unit scale; ~0.18 fits our 1x1 tiles.)
-	_spawn_free("cars/taxi", Vector3(0.9, 0.05, 2.80), 90.0, 0.18)
-	_spawn_free("cars/sedan", Vector3(4.6, 0.05, 3.22), -90.0, 0.18)
-	_spawn_free("cars/delivery", Vector3(3.0, 0.05, 3.20), -90.0, 0.18)
+	# Street life: cars drive the two lanes and loop around (design: the town
+	# feels alive; movement is ambient, never interactive).
+	_add_car("cars/taxi", 0.9, 2.80, 1.0, 0.55)
+	_add_car("cars/sedan", 4.6, 3.22, -1.0, 0.75)
+	_add_car("cars/delivery", 2.2, 3.22, -1.0, 0.42)
+	_add_clouds()
+	_add_sky_bodies()
 
 
 ## Instance a Kenney model at grid (col, row), rotated about Y, optionally scaled.
@@ -509,6 +538,107 @@ func _decorate_notice_board(origin: Vector3) -> void:
 		note.position = Vector3(n["x"], n["y"], 0.025)
 		note.rotation.z = deg_to_rad(n["r"])
 		root.add_child(note)
+
+
+# --- Living city -------------------------------------------------------------
+
+func _add_car(model: String, x: float, lane_z: float, dir: float, speed: float) -> void:
+	var car := _spawn_free(model, Vector3(x, 0.05, lane_z), 90.0 * dir, 0.18)
+	if car != null:
+		_cars.append({"node": car, "speed": speed, "dir": dir})
+
+
+func _add_clouds() -> void:
+	var specs := [
+		{"x": 0.5, "y": 3.4, "z": 1.2, "s": 1.0, "v": 0.14},
+		{"x": 3.5, "y": 4.0, "z": 3.5, "s": 1.4, "v": 0.10},
+		{"x": 6.0, "y": 3.6, "z": 5.2, "s": 0.8, "v": 0.18},
+	]
+	for spec in specs:
+		var cloud := Node3D.new()
+		cloud.position = Vector3(spec["x"], spec["y"], spec["z"])
+		world.add_child(cloud)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(1, 1, 1, 0.85)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.roughness = 1.0
+		mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		var blobs := [Vector3.ZERO, Vector3(0.3, 0.05, 0.05), Vector3(-0.28, 0.02, -0.04)]
+		var radii := [0.26, 0.19, 0.16]
+		for i in blobs.size():
+			var mi := MeshInstance3D.new()
+			var sphere := SphereMesh.new()
+			sphere.radius = radii[i] * float(spec["s"])
+			sphere.height = radii[i] * 1.3 * float(spec["s"])
+			mi.mesh = sphere
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.position = blobs[i] * float(spec["s"])
+			cloud.add_child(mi)
+		_clouds.append({"node": cloud, "speed": spec["v"]})
+
+
+func _add_sky_bodies() -> void:
+	_sun_disc_mat = StandardMaterial3D.new()
+	_sun_disc_mat.albedo_color = Color(1.0, 0.85, 0.45, 1.0)
+	_sun_disc_mat.emission_enabled = true
+	_sun_disc_mat.emission = Color(1.0, 0.8, 0.4)
+	_sun_disc_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_sun_disc = _sky_disc(_sun_disc_mat, 0.34)
+	_moon_disc_mat = StandardMaterial3D.new()
+	_moon_disc_mat.albedo_color = Color(0.92, 0.93, 1.0, 0.0)
+	_moon_disc_mat.emission_enabled = true
+	_moon_disc_mat.emission = Color(0.7, 0.72, 0.85)
+	_moon_disc = _sky_disc(_moon_disc_mat, 0.28)
+
+
+func _sky_disc(mat: StandardMaterial3D, radius: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	mi.mesh = sphere
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world.add_child(mi)
+	return mi
+
+
+func _update_city_life(delta: float) -> void:
+	# Cars loop along the road.
+	for c in _cars:
+		var node: Node3D = c["node"]
+		node.position.x += c["speed"] * c["dir"] * delta
+		if c["dir"] > 0.0 and node.position.x > 7.6:
+			node.position.x = -1.6
+		elif c["dir"] < 0.0 and node.position.x < -1.6:
+			node.position.x = 7.6
+	# Clouds drift and wrap.
+	for cl in _clouds:
+		var cn: Node3D = cl["node"]
+		cn.position.x += cl["speed"] * delta
+		if cn.position.x > 9.0:
+			cn.position.x = -2.5
+	# The day arc: 3 slots = morning..evening; 0 slots = dusk.
+	var phase: int = clampi(3 - GameState.slots_left, 0, 3)
+	var t: Dictionary = DAY_PHASES[phase]
+	var w := minf(delta * 1.6, 1.0)
+	sun.light_energy = lerpf(sun.light_energy, t["e"], w)
+	sun.light_color = sun.light_color.lerp(t["col"], w)
+	sun.rotation.x = lerp_angle(sun.rotation.x, deg_to_rad(t["rot"]), w)
+	if _env != null:
+		_env.ambient_light_energy = lerpf(_env.ambient_light_energy, t["amb"], w)
+		_env.background_color = _env.background_color.lerp(t["bg"], w)
+	# Sun crosses the sky and fades at dusk; the moon rises in its place.
+	if _sun_disc != null:
+		var p := float(phase) / 3.0
+		var sun_target := Vector3(lerpf(0.5, 6.2, p), lerpf(4.6, 3.4, p), -0.6)
+		_sun_disc.position = _sun_disc.position.lerp(sun_target, w)
+		_sun_disc_mat.albedo_color.a = lerpf(_sun_disc_mat.albedo_color.a,
+			0.0 if phase == 3 else 1.0, w)
+		_moon_disc.position = _moon_disc.position.lerp(Vector3(1.2, 4.5, -0.6), w)
+		_moon_disc_mat.albedo_color.a = lerpf(_moon_disc_mat.albedo_color.a,
+			1.0 if phase == 3 else 0.0, w)
 
 
 # --- Building badges (design doc §5: badges on buildings ARE the UI) ---------
@@ -860,6 +990,15 @@ func _build_actions() -> void:
 				fd.pressed.connect(_do_fund_dream)
 		"Bank":
 			_screen_body.text += "\n\nSavings jar:  €%d" % GameState.savings
+			if GameState.ledger.size() > 0:
+				_screen_body.text += "\n\nRecent activity:"
+				var start: int = maxi(0, GameState.ledger.size() - 8)
+				for i in range(GameState.ledger.size() - 1, start - 1, -1):
+					var e: Dictionary = GameState.ledger[i]
+					var amt := int(e.get("a", 0))
+					_screen_body.text += "\nDay %d  ·  %s  %s€%d" % [
+						int(e.get("d", 0)), e.get("t", "?"),
+						"+" if amt >= 0 else "−", absi(amt)]
 			var step := int(GameState.econ.get("savings_step", 10))
 			var d := _action_button("Deposit €%d" % step)
 			d.disabled = GameState.wallet < step
@@ -1119,6 +1258,7 @@ func _hud_bar(fill: Color, size: Vector2) -> ProgressBar:
 
 ## Exhausted state: the heart pulses for attention (visible consequence cue).
 func _process(delta: float) -> void:
+	_update_city_life(delta)
 	if _hud_heart_icon == null:
 		return
 	if GameState.wellbeing < 30:
