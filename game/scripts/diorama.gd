@@ -77,6 +77,9 @@ var _hud_dream_bar: ProgressBar
 
 var _dream_spot: Node3D
 var _dream_spot_key := ""  # rebuild ghost only when dream/progress bucket changes
+var _hud_heart_icon: TextureRect
+var _home_badge: Label3D
+var _blink_time := 0.0
 
 var _config_request: HTTPRequest
 var _health_request: HTTPRequest
@@ -99,6 +102,8 @@ func _ready() -> void:
 	# it is the answer to "why do we need money?".
 	if GameState.dream_id == "":
 		_open_dream_picker.call_deferred()
+	elif GameState.forced_rest_today:
+		_open_rest_day.call_deferred()
 
 	_config_request = HTTPRequest.new()
 	_health_request = HTTPRequest.new()
@@ -136,6 +141,12 @@ func _capture_and_quit() -> void:
 		GameState.wallet = 400
 		for i in 12:
 			GameState.fund_dream()
+	elif "--ui4" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("puppy")
+		GameState.wellbeing = 12
+		_refresh_hud()
 	elif "--ui2" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -249,6 +260,7 @@ func _build_town() -> void:
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
 	_scatter_confetti()
 	_update_dream_spot()
+	_update_home_badge()
 
 	# Street life: cars on the two lanes, a delivery truck by the Shop.
 	# (Car Kit uses a larger unit scale; ~0.18 fits our 1x1 tiles.)
@@ -497,6 +509,44 @@ func _decorate_notice_board(origin: Vector3) -> void:
 		note.position = Vector3(n["x"], n["y"], 0.025)
 		note.rotation.z = deg_to_rad(n["r"])
 		root.add_child(note)
+
+
+# --- Building badges (design doc §5: badges on buildings ARE the UI) ---------
+
+## A bouncing "!" over Home when the player is exhausted: go rest!
+func _update_home_badge() -> void:
+	var need := GameState.wellbeing < 30
+	if need and _home_badge == null:
+		_home_badge = Label3D.new()
+		_home_badge.text = "!"
+		_home_badge.font = _font
+		_home_badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_home_badge.pixel_size = 0.006
+		_home_badge.font_size = 96
+		_home_badge.modulate = Color("e24b4a")
+		_home_badge.outline_size = 14
+		_home_badge.outline_modulate = Color(1, 1, 1, 1)
+		_home_badge.no_depth_test = true
+		var home_pos := Vector3(1.0, 1.05, 5.0)  # above the Home lot
+		_home_badge.position = home_pos
+		world.add_child(_home_badge)
+		var bounce := _home_badge.create_tween().set_loops()
+		bounce.tween_property(_home_badge, "position:y", home_pos.y + 0.14, 0.35) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		bounce.tween_property(_home_badge, "position:y", home_pos.y, 0.35) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	elif not need and _home_badge != null:
+		_home_badge.queue_free()
+		_home_badge = null
+
+
+## Spec §9: the mentor-ordered Rest Day card (Aunt Vera's first cameo).
+func _open_rest_day() -> void:
+	_current_screen = "RestDay"
+	_screen_title.text = "Rest day — doctor's… no, AUNT VERA'S orders"
+	_screen_body.text = "You ran yourself completely empty two days in a row, so today you rest. No work, no errands.\n\nA day of rest costs a day of earnings — taking care of yourself is cheaper!\n\n— Aunt Vera"
+	_build_actions()
+	_show_card()
 
 
 # --- The dream on the diorama (design doc §8: dotted outline that fills) -----
@@ -820,6 +870,9 @@ func _build_actions() -> void:
 		"Evening":
 			var s := _action_button("Sleep  💤")
 			s.pressed.connect(_do_sleep)
+		"RestDay":
+			var ok := _action_button("Okay, I'll rest…")
+			ok.pressed.connect(_close_screen)
 		_:
 			_screen_body.text += "\n\n(coming soon)"
 
@@ -902,6 +955,8 @@ func _do_bank(amount: int, into_savings: bool) -> void:
 func _do_sleep() -> void:
 	GameState.end_day()
 	_close_screen()
+	if GameState.forced_rest_today:
+		_open_rest_day.call_deferred()
 
 
 # --- UI --------------------------------------------------------------------
@@ -1017,7 +1072,8 @@ func _setup_ui() -> void:
 	heart_row.alignment = BoxContainer.ALIGNMENT_END
 	heart_row.add_theme_constant_override("separation", 6)
 	hud.add_child(heart_row)
-	heart_row.add_child(_hud_icon("res://assets/ui/heart.png", 28))
+	_hud_heart_icon = _hud_icon("res://assets/ui/heart.png", 28)
+	heart_row.add_child(_hud_heart_icon)
 	_hud_heart = _hud_bar(Color("e24b4a"), Vector2(110, 14))
 	heart_row.add_child(_hud_heart)
 
@@ -1061,6 +1117,17 @@ func _hud_bar(fill: Color, size: Vector2) -> ProgressBar:
 	return bar
 
 
+## Exhausted state: the heart pulses for attention (visible consequence cue).
+func _process(delta: float) -> void:
+	if _hud_heart_icon == null:
+		return
+	if GameState.wellbeing < 30:
+		_blink_time += delta
+		_hud_heart_icon.modulate.a = 0.45 + 0.55 * absf(sin(_blink_time * 5.0))
+	elif _hud_heart_icon.modulate.a != 1.0:
+		_hud_heart_icon.modulate.a = 1.0
+
+
 func _refresh_hud() -> void:
 	if _hud_day == null:
 		return
@@ -1088,6 +1155,7 @@ func _refresh_hud() -> void:
 		_hud_dream_label.text = "€%d/€%d" % [GameState.dream_saved, GameState.dream_cost()]
 		_hud_dream_bar.value = GameState.dream_progress() * 100.0
 	_update_dream_spot()
+	_update_home_badge()
 
 
 const CARD_TOP := 196.0

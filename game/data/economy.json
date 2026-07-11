@@ -82,5 +82,9 @@
 				"label": "exhausted"
 			}
 		]
+	},
+	"forced_rest": {
+		"after_zero_days": 2,
+		"recovery": 40
 	}
 }

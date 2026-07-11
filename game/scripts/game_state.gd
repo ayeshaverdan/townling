@@ -26,6 +26,8 @@ var groceries_today: String = ""  # grocery tier id bought today ("" = none)
 var wellbeing: int = 70           # 0-100 (spec §9); low wellbeing reduces pay
 var dream_id: String = ""         # the dream (design doc §8) — "" until chosen
 var dream_saved: int = 0          # coins put toward the dream so far
+var zero_days: int = 0            # consecutive days ended at wellbeing 0
+var forced_rest_today: bool = false  # spec §9: mentor-ordered Rest Day
 
 ## Disable to keep unit tests from touching user:// saves.
 var autosave: bool = true
@@ -58,6 +60,8 @@ func init_new() -> void:
 	wellbeing = int(_wb().get("start", 70))
 	dream_id = ""
 	dream_saved = 0
+	zero_days = 0
+	forced_rest_today = false
 	_after_change()
 
 
@@ -217,6 +221,18 @@ func end_day() -> void:
 		wallet -= rent_amount()
 	day += 1
 	slots_left = int(econ.get("slots_per_day", 3))
+	# Spec §9 caring floor: two straight days ended empty -> the mentor
+	# orders a Rest Day. The cost is a whole day of earnings, not a bill.
+	var fr: Dictionary = econ.get("forced_rest", {})
+	if wellbeing == 0:
+		zero_days += 1
+	else:
+		zero_days = 0
+	forced_rest_today = zero_days >= int(fr.get("after_zero_days", 2))
+	if forced_rest_today:
+		slots_left = 0
+		wellbeing = clampi(wellbeing + int(fr.get("recovery", 40)), 0, 100)
+		zero_days = 0
 	earned_today = 0
 	spent_today = 0
 	groceries_today = ""
@@ -252,6 +268,7 @@ func save_game() -> void:
 		"slots_left": slots_left, "earned_today": earned_today,
 		"spent_today": spent_today, "groceries_today": groceries_today,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
+		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
 	}))
 
 
@@ -274,5 +291,7 @@ func load_game() -> bool:
 	wellbeing = int(parsed.get("wellbeing", 70))
 	dream_id = str(parsed.get("dream_id", ""))
 	dream_saved = int(parsed.get("dream_saved", 0))
+	zero_days = int(parsed.get("zero_days", 0))
+	forced_rest_today = bool(parsed.get("forced_rest_today", false))
 	changed.emit()
 	return true

@@ -102,6 +102,22 @@ func _init() -> void:
 	check(gs.fund_dream().is_empty(), "no funding past completion")
 	check(gs.dream_progress() == 1.0, "progress 100%")
 
+	# Forced Rest Day (spec §9): two days ended at 0 -> mentor floor.
+	gs.zero_days = 0  # isolate from the day-7 zero-day above
+	gs.wellbeing = 0
+	gs.groceries_today = ""
+	gs.end_day()
+	check(gs.zero_days == 1 and not gs.forced_rest_today, "first empty day counted")
+	gs.end_day()
+	check(gs.forced_rest_today, "second empty day -> forced rest")
+	check(gs.slots_left == 0, "rest day has no slots")
+	check(gs.wellbeing == 40, "caring recovery +40")
+	check(gs.zero_days == 0, "counter reset")
+	gs.groceries_today = "normal"
+	gs.end_day()
+	check(not gs.forced_rest_today, "normal day after rest")
+	check(gs.slots_left == 3, "slots back")
+
 	if failures == 0:
 		print("ALL TESTS PASSED")
 		quit(0)
