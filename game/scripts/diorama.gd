@@ -102,16 +102,27 @@ func _capture_and_quit() -> void:
 func _setup_light() -> void:
 	# Cosy warm afternoon, matching the reference: golden key light, soft
 	# shadows, a warm ambient fill so pastels stay soft, muted blue-grey sky.
+	# Lighting replicated from Kenney's own Starter Kit scene
+	# (scenes/main.tscn + main-environment.tres in the upstream repo):
+	# a plain WHITE sun with SOFTENED shadows (opacity 0.75), a strong cool
+	# blue-grey ambient fill, a deeper blue-grey sky, and filmic tonemapping.
+	# That combination — not tinted lights — is what produces the kit's soft,
+	# cosy screenshot look. (Their SSAO/glow need Forward+; skipped on web.)
 	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-55.0), 0.0)
-	sun.light_energy = 1.15
-	sun.light_color = Color(1.0, 0.89, 0.72)
+	sun.light_energy = 1.0
+	sun.light_color = Color(1, 1, 1)
 	sun.shadow_enabled = true
-	sun.shadow_blur = 1.2
+	sun.shadow_opacity = 0.75
+	sun.shadow_blur = 1.0
+
+	# Single-sun setup, as upstream; the counter-fill stays off.
+	($Sun2 as DirectionalLight3D).visible = false
 
 	var env := ($WorldEnvironment as WorldEnvironment).environment
-	env.background_color = Color("b3c4cc")            # soft muted blue-grey
-	env.ambient_light_color = Color(1.0, 0.93, 0.82)  # warm fill
-	env.ambient_light_energy = 0.28                   # lower fill -> deeper, soothing shadows
+	env.background_color = Color(0.560784, 0.592157, 0.670588)      # kenney sky
+	env.ambient_light_color = Color(0.662745, 0.694118, 0.772549)   # cool fill
+	env.ambient_light_energy = 0.75
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
 
 func _build_town() -> void:
@@ -183,18 +194,22 @@ func _add_label(building: Node3D, text: String, height: float) -> void:
 	label.pixel_size = 0.0035
 	label.font_size = 40
 	label.outline_size = 10
-	label.modulate = Color("2c2c2a")
+	label.modulate = Color("1c1b19")
 	label.outline_modulate = Color(1, 1, 1, 0.95)
 	label.position = Vector3(0.0, height + 0.35, 0.0)
 	building.add_child(label)
 
 
 func _setup_camera() -> void:
-	var target := Vector3((COLS - 1) * TILE * 0.5, 1.2, (ROWS - 1) * TILE * 0.5)
-	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	# Kenney-style camera: narrow-fov perspective (fov 20 at distance ~30)
+	# instead of pure orthographic — reads isometric but keeps a whisper of
+	# depth, matching the kit's own scene.
+	var target := Vector3((COLS - 1) * TILE * 0.5, 0.8, (ROWS - 1) * TILE * 0.5)
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
-	camera.size = 9.0
-	camera.position = target + Vector3(12.0, 13.0, 12.0)
+	camera.fov = 20.0
+	var dir := Vector3(12.0, 13.0, 12.0).normalized()
+	camera.position = target + dir * 30.0
 	camera.look_at(target, Vector3.UP)
 
 

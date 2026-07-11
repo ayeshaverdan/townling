@@ -19,6 +19,8 @@ environment = SubResource("Env")
 shadow_enabled = true
 light_energy = 1.2
 
+[node name="Sun2" type="DirectionalLight3D" parent="."]
+
 [node name="Camera" type="Camera3D" parent="."]
 projection = 1
 current = true
