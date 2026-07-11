@@ -67,16 +67,32 @@ func init_new() -> void:
 func work_shift() -> Dictionary:
 	if slots_left <= 0:
 		return {}
-	var shift: Dictionary = econ.get("courier_shift", {})
-	var amount := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
-	var tired := wellbeing < int(_wb().get("low_threshold", 30))
-	if tired:
-		amount = int(amount * float(_wb().get("low_pay_mult", 0.8)))
+	var preview := shift_pay_preview()
+	var amount := int(preview.get("amount", 0))
 	slots_left -= 1
 	wallet += amount
 	earned_today += amount
 	_after_change()
-	return {"amount": amount, "tired": tired}
+	return {"amount": amount, "tier": preview.get("tier", "fine"),
+		"bonus": preview.get("bonus", 0)}
+
+
+## What a shift pays RIGHT NOW, given wellbeing (spec §9 pay tiers,
+## v1.1 amendment: thriving/fine/tired/exhausted — legible cause and effect).
+func shift_pay_preview() -> Dictionary:
+	var shift: Dictionary = econ.get("courier_shift", {})
+	var base := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
+	var tier := pay_tier()
+	var amount := int(base * float(tier.get("mult", 1.0))) + int(tier.get("bonus", 0))
+	return {"amount": amount, "tier": tier.get("label", "fine"),
+		"bonus": int(tier.get("bonus", 0))}
+
+
+func pay_tier() -> Dictionary:
+	for tier in _wb().get("pay_tiers", []):
+		if wellbeing >= int(tier.get("min", 0)):
+			return tier
+	return {"mult": 1.0, "bonus": 0, "label": "fine"}
 
 
 ## Buy groceries (one tier per day): one slot.

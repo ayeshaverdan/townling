@@ -696,8 +696,13 @@ func _open_evening() -> void:
 	if GameState.rent_due_tonight():
 		lines += "\nRent    ↓  €%d  (due tonight)" % GameState.rent_amount()
 	lines += "\nWallet  =  €%d" % GameState.wallet
+	var overnight := int(GameState._wb().get("daily_drift", -5))
 	if GameState.groceries_today == "":
-		lines += "\n\nNo dinner tonight — that will hurt tomorrow!"
+		overnight -= int(GameState.econ.get("no_food_penalty", 10))
+		lines += "\n\nNo dinner tonight!  Energy %d overnight." % overnight
+	else:
+		overnight += int(GameState._grocery_tier(GameState.groceries_today).get("wellbeing", 0))
+		lines += "\n\nEnergy %+d overnight (%s dinner)." % [overnight, GameState.groceries_today]
 	if GameState.dream_id != "" and not GameState.dream_complete():
 		lines += "\nDream fund:  €%d / €%d" % [GameState.dream_saved, GameState.dream_cost()]
 	_screen_body.text = lines
@@ -762,9 +767,15 @@ func _build_actions() -> void:
 				var go := _action_button("Let's go!")
 				go.pressed.connect(_close_screen)
 		"Workplace":
-			var shift: Dictionary = GameState.econ.get("courier_shift", {})
-			var pay := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
-			var b := _action_button("Work a shift  ·  1 slot  ·  +€%d" % pay)
+			var preview: Dictionary = GameState.shift_pay_preview()
+			match str(preview.get("tier", "")):
+				"thriving":
+					_screen_body.text += "\n\nYou feel great — customers tip extra!"
+				"tired":
+					_screen_body.text += "\n\nYou're tired — shifts pay less until you rest."
+				"exhausted":
+					_screen_body.text += "\n\nYou're exhausted! Rest and a good dinner will fix your pay."
+			var b := _action_button("Work a shift  ·  1 slot  ·  +€%d" % int(preview.get("amount", 0)))
 			b.disabled = GameState.slots_left <= 0
 			b.pressed.connect(_do_shift)
 		"Shop":
@@ -849,10 +860,15 @@ func _do_shift() -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
-	if r.get("tired", false):
-		_screen_body.text = "Deliveries done… but you're worn out, so it went slowly.\n\n+€%d (tired pay). Some rest would help!" % r["amount"]
-	else:
-		_screen_body.text = "Deliveries done — nice work!\n\n+€%d into your wallet." % r["amount"]
+	match str(r.get("tier", "fine")):
+		"thriving":
+			_screen_body.text = "Deliveries done with a spring in your step!\n\n+€%d — including a €%d good-mood tip!" % [r["amount"], r["bonus"]]
+		"tired":
+			_screen_body.text = "Deliveries done… slowly. You're tired.\n\n+€%d (reduced pay). Some rest would help!" % r["amount"]
+		"exhausted":
+			_screen_body.text = "You dragged yourself through the shift.\n\n+€%d (exhausted pay). Rest and eat well tonight!" % r["amount"]
+		_:
+			_screen_body.text = "Deliveries done — nice work!\n\n+€%d into your wallet." % r["amount"]
 	_build_actions()
 
 
@@ -1053,6 +1069,15 @@ func _refresh_hud() -> void:
 	for i in _hud_bolts.size():
 		_hud_bolts[i].modulate.a = 1.0 if i < GameState.slots_left else 0.2
 	_hud_heart.value = float(GameState.wellbeing)
+	var heart_fill := StyleBoxFlat.new()
+	heart_fill.set_corner_radius_all(8)
+	if GameState.wellbeing >= 60:
+		heart_fill.bg_color = Color("7fb77f")
+	elif GameState.wellbeing >= 30:
+		heart_fill.bg_color = Color("e7b24c")
+	else:
+		heart_fill.bg_color = Color("e24b4a")
+	_hud_heart.add_theme_stylebox_override("fill", heart_fill)
 	if GameState.dream_id == "":
 		_hud_dream_label.text = "pick a dream!"
 		_hud_dream_bar.value = 0.0

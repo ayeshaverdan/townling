@@ -189,6 +189,8 @@ One meter, 0–100, visible only as the character's expression and room ambience
 
 Effects: below 30, shift pay −20% and mini-games get harder (the money-problems-compound spiral, gentle); at 0 for two consecutive days, the mentor forces a scripted Rest Day (a caring floor, not a punishment). Above 80, mini-game tip chance +10% — thriving pays, mildly.
 
+*v1.1 amendment (July 2026, from the first kid playtest — "no dinner didn't seem to matter"):* the fun-test build makes the pay effect **tiered and visible** rather than a single hidden threshold: thriving 80+ = full pay **+ €4 good-mood tip** (deterministic stand-in for the mini-game tip bonus), fine 60–79 = 100%, tired 30–59 = 90%, exhausted <30 = 80%. The current shift pay is always shown on the Workplace action button before working, and the evening card states the overnight energy math (drift + dinner effect) explicitly. Rationale: consequences must be legible and felt within a day, not discovered after crossing an invisible line; deliberately tiers rather than a linear wellbeing×pay tax to keep cause-and-effect explainable and non-punishing.
+
 ---
 
 ## 10. Events — the Launch Shock Deck

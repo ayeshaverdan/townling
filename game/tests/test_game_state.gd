@@ -58,10 +58,18 @@ func _init() -> void:
 	# Rent pushed the wallet negative (48 - 60): allowed by design (debt path).
 	check(gs.wallet == -12, "wallet may go negative from rent")
 
-	# Tired penalty: below threshold the shift pays 80%.
-	var tired_r: Dictionary = gs.work_shift()
-	check(tired_r.get("tired", false), "shift reports tired")
-	check(tired_r.get("amount", 0) == 22, "tired shift pays €22 (80%)")
+	# Pay tiers (spec §9 v1.1): exhausted 80%, tired 90%, fine 100%, thriving +€4.
+	var tier_r: Dictionary = gs.work_shift()
+	check(str(tier_r.get("tier", "")) == "exhausted", "wellbeing 0 -> exhausted")
+	check(tier_r.get("amount", 0) == 22, "exhausted shift pays €22 (80%)")
+	gs.wellbeing = 45
+	check(gs.shift_pay_preview().get("amount", 0) == 25, "tired preview €25 (90%)")
+	check(str(gs.pay_tier().get("label", "")) == "tired", "45 -> tired tier")
+	gs.wellbeing = 70
+	check(gs.shift_pay_preview().get("amount", 0) == 28, "fine preview €28 (100%)")
+	gs.wellbeing = 85
+	check(gs.shift_pay_preview().get("amount", 0) == 32, "thriving preview €32 (+€4 tip)")
+	gs.wellbeing = 0
 
 	# Bank micro-actions (fund the wallet first).
 	gs.wallet = 100
