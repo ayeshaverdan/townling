@@ -90,6 +90,11 @@ func _capture_and_quit() -> void:
 		var dir := Vector3(1.0, 1.05, 1.0).normalized()
 		camera.position = focus + dir * 11.0
 		camera.look_at(focus, Vector3.UP)
+	elif "--zoom2" in OS.get_cmdline_args():
+		var focus2 := Vector3(3.0, 0.4, 5.0)  # south row: Home/Shop/Notice Board
+		var dir2 := Vector3(1.0, 1.05, 1.0).normalized()
+		camera.position = focus2 + dir2 * 12.0
+		camera.look_at(focus2, Vector3.UP)
 	for _i in range(6):
 		await get_tree().process_frame
 	var image := get_viewport().get_texture().get_image()
@@ -152,9 +157,21 @@ func _build_town() -> void:
 		)
 		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
 
-		# Per-landmark detailing (one category at a time; Bank first).
-		if lm["name"] == "Bank":
-			_decorate_bank(Vector3(cell.x * TILE, 0.0, cell.y * TILE))
+		# Per-landmark detailing.
+		var lot := Vector3(cell.x * TILE, 0.0, cell.y * TILE)
+		match lm["name"]:
+			"Bank":
+				_decorate_bank(lot)
+			"School":
+				_decorate_school(lot)
+			"Workplace":
+				_decorate_workplace(lot)
+			"Home":
+				_decorate_home(lot)
+			"Shop":
+				_decorate_shop(lot)
+			"Notice Board":
+				_decorate_notice_board(lot)
 
 	# Greenery: trees on the open grass cells (rows 0/6 and gaps in 1/5).
 	var tree_cells := [
@@ -162,7 +179,7 @@ func _build_town() -> void:
 		Vector2i(4, 0), Vector2i(5, 0), Vector2i(6, 0),
 		Vector2i(0, 1), Vector2i(2, 1), Vector2i(4, 1), Vector2i(6, 1),
 		Vector2i(0, 5), Vector2i(2, 5), Vector2i(4, 5), Vector2i(6, 5),
-		Vector2i(0, 6), Vector2i(1, 6), Vector2i(2, 6), Vector2i(4, 6),
+		Vector2i(0, 6), Vector2i(2, 6), Vector2i(4, 6),
 		Vector2i(5, 6), Vector2i(6, 6),
 	]
 	var tall := true
@@ -170,8 +187,9 @@ func _build_town() -> void:
 		_spawn("grass-trees-tall" if tall else "grass-trees", cell)
 		tall = not tall
 
-	# A fountain centrepiece in the front park.
+	# A fountain centrepiece in the front park, and a little sidewalk colour.
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
+	_scatter_confetti()
 
 
 ## Instance a Kenney model at grid (col, row), rotated about Y.
@@ -192,7 +210,10 @@ func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0) -> Node3D:
 const GROUND_Y := 0.06
 
 ## A soft matte coloured box primitive, positioned by its base centre.
-func _box(size: Vector3, color: Color, base_pos: Vector3, rot_deg: float = 0.0) -> MeshInstance3D:
+func _box(
+	size: Vector3, color: Color, base_pos: Vector3,
+	rot_deg: float = 0.0, rot_x_deg: float = 0.0
+) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
@@ -204,12 +225,16 @@ func _box(size: Vector3, color: Color, base_pos: Vector3, rot_deg: float = 0.0) 
 	mi.material_override = mat
 	mi.position = base_pos + Vector3(0.0, size.y * 0.5, 0.0)
 	mi.rotation.y = deg_to_rad(rot_deg)
+	mi.rotation.x = deg_to_rad(rot_x_deg)
 	world.add_child(mi)
 	return mi
 
 
 ## A standing sign: grey post, coloured panel, Lilita text on the panel face.
-func _sign(base_pos: Vector3, text: String, panel_color: Color, face_deg: float) -> void:
+func _sign(
+	base_pos: Vector3, text: String, panel_color: Color, face_deg: float,
+	panel_w: float = 0.55, font_px: int = 56
+) -> void:
 	var root := Node3D.new()
 	root.position = base_pos
 	root.rotation.y = deg_to_rad(face_deg)
@@ -227,7 +252,7 @@ func _sign(base_pos: Vector3, text: String, panel_color: Color, face_deg: float)
 	root.add_child(post_mi)
 
 	var panel := BoxMesh.new()
-	panel.size = Vector3(0.55, 0.26, 0.05)
+	panel.size = Vector3(panel_w, 0.26, 0.05)
 	var panel_mi := MeshInstance3D.new()
 	panel_mi.mesh = panel
 	var panel_mat := StandardMaterial3D.new()
@@ -242,7 +267,7 @@ func _sign(base_pos: Vector3, text: String, panel_color: Color, face_deg: float)
 	label.text = text
 	label.font = _font
 	label.pixel_size = 0.003
-	label.font_size = 56
+	label.font_size = font_px
 	label.modulate = Color(1, 1, 1)
 	label.outline_size = 4
 	label.outline_modulate = Color(0, 0, 0, 0.25)
@@ -279,6 +304,148 @@ func _decorate_bank(origin: Vector3) -> void:
 	for x in [-0.22, 0.22]:
 		_box(Vector3(0.14, 0.09, 0.14), Color("b06041"), ground + Vector3(x, 0.0, 0.44))
 		_box(Vector3(0.11, 0.10, 0.11), Color("61cb8b"), ground + Vector3(x, 0.09, 0.44))
+
+
+## School lot: SCHOOL sign, flagpole with a little flag, and a play ball.
+func _decorate_school(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	_sign(ground + Vector3(-0.42, 0.0, 0.62), "SCHOOL", Color("b58a3a"), 45.0, 0.62, 44)
+	# Flagpole at the right front corner.
+	_box(Vector3(0.03, 0.85, 0.03), Color("d8d4c8"), ground + Vector3(0.42, 0.0, 0.40))
+	_box(Vector3(0.16, 0.10, 0.015), Color("e24b4a"), ground + Vector3(0.51, 0.68, 0.40))
+	# A red play ball on the lot.
+	var ball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.055
+	sphere.height = 0.11
+	ball.mesh = sphere
+	var ball_mat := StandardMaterial3D.new()
+	ball_mat.albedo_color = Color("e24b4a")
+	ball_mat.roughness = 0.8
+	ball.material_override = ball_mat
+	ball.position = ground + Vector3(-0.30, 0.055, 0.42)
+	world.add_child(ball)
+
+
+## Workplace lot: OFFICE sign + tidy planters by the door.
+func _decorate_workplace(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	_sign(ground + Vector3(-0.42, 0.0, 0.62), "OFFICE", Color("60748c"), 45.0, 0.62, 44)
+	for x in [-0.24, 0.24]:
+		_box(Vector3(0.13, 0.08, 0.13), Color("8a8478"), ground + Vector3(x, 0.0, 0.44))
+		_box(Vector3(0.10, 0.09, 0.10), Color("5d8f5f"), ground + Vector3(x, 0.08, 0.44))
+
+
+## Home lot: white picket fence with a gate gap, mailbox, and a flower bed.
+func _decorate_home(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	var fence_col := Color("f2efe6")
+	# Fence rails either side of the gate (door is centred on the front face).
+	for side in [-1.0, 1.0]:
+		var cx: float = side * 0.30
+		_box(Vector3(0.32, 0.035, 0.025), fence_col, ground + Vector3(cx, 0.10, 0.62))
+		for i in 3:
+			var post_x: float = cx + (i - 1) * 0.13
+			_box(Vector3(0.045, 0.19, 0.035), fence_col, ground + Vector3(post_x, 0.0, 0.62))
+	# Mailbox on a post by the gate, little red flag.
+	_box(Vector3(0.03, 0.24, 0.03), Color("7a6a55"), ground + Vector3(0.16, 0.0, 0.70))
+	_box(Vector3(0.10, 0.07, 0.07), Color("f7f4ea"), ground + Vector3(0.16, 0.24, 0.70))
+	_box(Vector3(0.015, 0.06, 0.02), Color("e24b4a"), ground + Vector3(0.21, 0.28, 0.70))
+	# Flower bed: green base with tiny colourful blooms.
+	_box(Vector3(0.26, 0.035, 0.12), Color("5d8f5f"), ground + Vector3(-0.28, 0.0, 0.74))
+	var blooms := [Color("e88ca0"), Color("f0c05a"), Color("e86a5a"), Color("d8a0e0")]
+	for i in blooms.size():
+		_box(Vector3(0.035, 0.05, 0.035), blooms[i],
+			ground + Vector3(-0.37 + i * 0.062, 0.035, 0.74))
+
+
+## Shop lot: striped awning over the front, SHOP sign, produce crates.
+func _decorate_shop(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	_sign(ground + Vector3(-0.45, 0.0, 0.52), "SHOP", Color("d98a4a"), 45.0)
+	# Striped awning above the shopfront (front wall at z≈+0.5), angled down.
+	var stripe_cols := [Color("8fd0a8"), Color("f5efdd")]
+	for i in 6:
+		var sx := -0.225 + i * 0.09
+		_box(Vector3(0.088, 0.018, 0.24), stripe_cols[i % 2],
+			origin + Vector3(sx, 0.40, 0.60), 0.0, 22.0)
+	# Produce crates by the entrance.
+	var crates := [
+		{"pos": Vector3(0.30, 0.0, 0.60), "produce": Color("e8863c")},
+		{"pos": Vector3(0.30, 0.0, 0.76), "produce": Color("cb4c44")},
+		{"pos": Vector3(0.44, 0.0, 0.68), "produce": Color("7fb050")},
+	]
+	for c in crates:
+		_box(Vector3(0.12, 0.08, 0.12), Color("9a7a52"), ground + c["pos"])
+		for j in 3:
+			_box(Vector3(0.032, 0.032, 0.032), c["produce"],
+				ground + c["pos"] + Vector3(-0.032 + j * 0.033, 0.08, 0.01))
+
+
+## Notice Board lot: a freestanding pinned board out front — the landmark IS
+## the board (the little building behind is just its kiosk).
+func _decorate_notice_board(origin: Vector3) -> void:
+	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
+	var root := Node3D.new()
+	root.position = ground + Vector3(-0.05, 0.0, 0.72)
+	root.rotation.y = deg_to_rad(45.0)
+	world.add_child(root)
+	# Posts + board panel + cork face.
+	for x in [-0.30, 0.30]:
+		var post := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(0.045, 0.62, 0.045)
+		post.mesh = pm
+		var pmat := StandardMaterial3D.new()
+		pmat.albedo_color = Color("7a6a55")
+		post.material_override = pmat
+		post.position = Vector3(x, 0.31, 0.0)
+		root.add_child(post)
+	var panel := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.70, 0.40, 0.035)
+	panel.mesh = bm
+	var bmat := StandardMaterial3D.new()
+	bmat.albedo_color = Color("8a6b4d")
+	panel.material_override = bmat
+	panel.position = Vector3(0.0, 0.44, 0.0)
+	root.add_child(panel)
+	# Pinned notes: little pastel papers, slightly askew.
+	var notes := [
+		{"x": -0.24, "y": 0.50, "c": Color("f7e8a3"), "r": 4.0},
+		{"x": -0.08, "y": 0.46, "c": Color("f2f0e8"), "r": -3.0},
+		{"x": 0.09, "y": 0.52, "c": Color("a8d8f0"), "r": 2.0},
+		{"x": 0.24, "y": 0.47, "c": Color("f0b8c8"), "r": -5.0},
+		{"x": -0.16, "y": 0.36, "c": Color("bfe3b0"), "r": -2.0},
+		{"x": 0.02, "y": 0.34, "c": Color("f7e8a3"), "r": 5.0},
+		{"x": 0.20, "y": 0.35, "c": Color("f2f0e8"), "r": 3.0},
+	]
+	for n in notes:
+		var note := MeshInstance3D.new()
+		var nm := BoxMesh.new()
+		nm.size = Vector3(0.085, 0.11, 0.008)
+		note.mesh = nm
+		var nmat := StandardMaterial3D.new()
+		nmat.albedo_color = n["c"]
+		note.material_override = nmat
+		note.position = Vector3(n["x"], n["y"], 0.025)
+		note.rotation.z = deg_to_rad(n["r"])
+		root.add_child(note)
+
+
+## A little scattered colour on the sidewalks (fixed, deterministic).
+func _scatter_confetti() -> void:
+	var spots := [
+		[Vector3(0.4, 0, 2.3), Color("f0b8c8"), 15.0],
+		[Vector3(2.3, 0, 1.72), Color("a8d8f0"), -20.0],
+		[Vector3(4.7, 0, 2.25), Color("f7e8a3"), 40.0],
+		[Vector3(5.6, 0, 1.8), Color("bfe3b0"), -10.0],
+		[Vector3(1.6, 0, 4.28), Color("a8d8f0"), 30.0],
+		[Vector3(3.8, 0, 4.2), Color("f0b8c8"), -35.0],
+		[Vector3(5.2, 0, 4.3), Color("f7e8a3"), 10.0],
+	]
+	for s in spots:
+		_box(Vector3(0.06, 0.004, 0.06), s[1], s[0] + Vector3(0, GROUND_Y, 0), s[2])
 
 
 func _add_label(building: Node3D, text: String, height: float) -> void:
