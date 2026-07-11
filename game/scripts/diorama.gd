@@ -75,6 +75,8 @@ var _hud_bolts: Array[TextureRect] = []
 var _hud_heart: ProgressBar
 var _hud_dream_label: Label
 var _hud_dream_bar: ProgressBar
+var _hud_chapter: Label
+var _lights_built := false
 
 var _dream_spot: Node3D
 var _dream_spot_key := ""  # rebuild ghost only when dream/progress bucket changes
@@ -123,6 +125,10 @@ func _ready() -> void:
 		_open_dream_picker.call_deferred()
 	elif GameState.forced_rest_today:
 		_open_rest_day.call_deferred()
+	elif GameState.ch1_announce_pending:
+		GameState.ch1_announce_pending = false
+		GameState.save_game()
+		_open_chapter_announce.call_deferred()
 
 	_config_request = HTTPRequest.new()
 	_health_request = HTTPRequest.new()
@@ -160,6 +166,23 @@ func _capture_and_quit() -> void:
 		GameState.wallet = 400
 		for i in 12:
 			GameState.fund_dream()
+	elif "--ui6" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("ocean")
+		GameState.gigs_today = ["dog_walk", "bake_sale", "quiz"]
+		for i in _picks.size():
+			if _picks[i]["name"] == "Notice Board":
+				_open_screen(i)
+				break
+	elif "--ui7" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("ocean")
+		GameState.ch1_active = true
+		GameState.ch1_deadline = 21
+		_refresh_hud()
+		_open_chapter_announce()
 	elif "--ui5" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -297,7 +320,6 @@ func _build_town() -> void:
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
 	_scatter_confetti()
 	_update_dream_spot()
-	_update_home_badge()
 
 	# Street life: cars drive the two lanes and loop around (design: the town
 	# feels alive; movement is ambient, never interactive).
@@ -726,6 +748,72 @@ func _do_event_choice(choice_id: String) -> void:
 	_build_actions()
 
 
+func _do_gig(id: String) -> void:
+	var r: Dictionary = GameState.take_gig(id)
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	_screen_body.text = "%s done!\n\n+€%d straight into your wallet." % [r["label"], r["pay"]]
+	_build_actions()
+
+
+func _open_quiz() -> void:
+	if GameState.slots_left <= 0:
+		return
+	_current_screen = "Quiz"
+	_screen_title.text = "Bank quiz night"
+	_screen_body.text = str(GameState.quiz_question().get("q", ""))
+	_build_actions()
+
+
+func _do_quiz_answer(idx: int) -> void:
+	var r: Dictionary = GameState.answer_quiz(idx)
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	_current_screen = "Notice Board"
+	_screen_title.text = "Bank quiz night"
+	if r.get("correct", false):
+		_screen_body.text = "Correct! The quizmaster is impressed.\n\n+€%d!" % r["pay"]
+	else:
+		_screen_body.text = "Not quite — the right answer was:\n“%s”\n\nHere's €%d for playing. Now you know!" % [
+			r["answer_text"], r["pay"]]
+	_build_actions()
+
+
+## Chapter 1 announcement (day-7 morning) and deadline-night resolution.
+func _open_chapter_announce() -> void:
+	_current_screen = "Chapter"
+	_screen_title.text = "The Festival is coming!"
+	_screen_body.text = "Townling's big festival is on day %d — and tickets cost €%d.\n\nCan you save that much in time? Every coin in your wallet and savings jar counts!\n\n— Aunt Vera" % [
+		GameState.ch1_deadline, GameState.ch1_ticket()]
+	_build_actions()
+	if not _screen_open:
+		_show_card()
+
+
+func _open_chapter_result() -> void:
+	var r: Dictionary = GameState.resolve_chapter1()
+	if r.is_empty():
+		return
+	_current_screen = "ChapterResult"
+	if r.get("success", false):
+		_screen_title.text = "FESTIVAL NIGHT! 🎉"
+		_screen_body.text = "You saved €%d in time! Music, lights, and the best evening Townling has ever seen.\n\nThe string lights by the fountain are yours to keep." % r["ticket"]
+	else:
+		_screen_title.text = "The festival left without you…"
+		_screen_body.text = "You needed €%d but didn't have it saved. It stings — and that's okay.\n\nAttempt 2: the next festival is on day %d. You know what to do now.\n\n— Aunt Vera" % [
+			r["ticket"], r["next_deadline"]]
+	_build_actions()
+	if not _screen_open:
+		_show_card()
+
+
+func _after_chapter_result() -> void:
+	_current_screen = "Evening"
+	_open_evening()
+
+
 ## Spec §9: the mentor-ordered Rest Day card (Aunt Vera's first cameo).
 func _open_rest_day() -> void:
 	_current_screen = "RestDay"
@@ -736,6 +824,37 @@ func _open_rest_day() -> void:
 	_screen_body.text = "You ran yourself completely empty two days in a row, so today you rest. No work, no errands.\n\nThat's about €%d of pay you WON'T earn today. Dinner and sleep are cheaper than exhaustion!\n\n(Wellbeing +40)\n\n— Aunt Vera" % missed
 	_build_actions()
 	_show_card()
+
+
+## Chapter 1 trophy: string lights over the fountain plaza, forever.
+func _update_string_lights() -> void:
+	if _lights_built or not GameState.ch1_done:
+		return
+	_lights_built = true
+	var colors := [Color("e24b4a"), Color("f7cb60"), Color("7fb77f"), Color("8fc1e8"), Color("c9aee4")]
+	for p in [[Vector3(2.55, GROUND_Y, 5.55), Vector3(3.45, GROUND_Y, 6.45)]]:
+		var a: Vector3 = p[0]
+		var b: Vector3 = p[1]
+		for post_pos in [a, b]:
+			_box(Vector3(0.035, 0.5, 0.035), Color("7a6a55"), post_pos)
+		for i in 7:
+			var t := (i + 1) / 8.0
+			var pos := a.lerp(b, t)
+			var sag := 0.08 * sin(t * PI)
+			var bulb := MeshInstance3D.new()
+			var bm := SphereMesh.new()
+			bm.radius = 0.028
+			bm.height = 0.056
+			bulb.mesh = bm
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = colors[i % colors.size()]
+			mat.emission_enabled = true
+			mat.emission = colors[i % colors.size()]
+			mat.emission_energy_multiplier = 0.7
+			bulb.material_override = mat
+			bulb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			bulb.position = pos + Vector3(0, 0.48 - sag, 0)
+			world.add_child(bulb)
 
 
 # --- The dream on the diorama (design doc §8: dotted outline that fills) -----
@@ -928,6 +1047,9 @@ func _open_screen(index: int) -> void:
 
 ## Evening summary (spec §3): three simple lines, then the event slot, then sleep.
 func _open_evening() -> void:
+	if GameState.ch1_due_tonight():
+		_open_chapter_result()
+		return
 	GameState.prepare_tonight()
 	_current_screen = "Evening"
 	_screen_title.text = "Day %d — Evening" % GameState.day
@@ -1090,6 +1212,35 @@ func _build_actions() -> void:
 					cb.disabled = cost > 0 and GameState.wallet < cost
 					var cid: String = choice.get("id", "")
 					cb.pressed.connect(func() -> void: _do_event_choice(cid))
+		"Notice Board":
+			if GameState.gigs_today.is_empty():
+				_screen_body.text += "\n\nNo gigs left today — fresh ones tomorrow!"
+			for gid in GameState.gigs_today:
+				var g: Dictionary = GameState.gig_def(gid)
+				if g.is_empty():
+					continue
+				if bool(g.get("quiz", false)):
+					var qb := _action_button("%s  ·  1 slot  ·  answer to earn" % g.get("label", "?"))
+					qb.disabled = GameState.slots_left <= 0
+					qb.pressed.connect(_open_quiz)
+				else:
+					var gb := _action_button("%s  ·  1 slot  ·  +€%d" % [g.get("label", "?"), int(g.get("base", 0))])
+					gb.disabled = GameState.slots_left <= 0
+					var gid2: String = gid
+					gb.pressed.connect(func() -> void: _do_gig(gid2))
+		"Quiz":
+			var q: Dictionary = GameState.quiz_question()
+			var answers: Array = q.get("answers", [])
+			for i in answers.size():
+				var ab := _action_button(str(answers[i]))
+				var idx: int = i
+				ab.pressed.connect(func() -> void: _do_quiz_answer(idx))
+		"Chapter":
+			var okb := _action_button("I'm in! Let's save up!")
+			okb.pressed.connect(_close_screen)
+		"ChapterResult":
+			var cb2 := _action_button("Continue")
+			cb2.pressed.connect(_after_chapter_result)
 		_:
 			_screen_body.text += "\n\n(coming soon)"
 	# Must-answer screens have no escape hatch (dream pick, live event).
@@ -1181,6 +1332,10 @@ func _do_sleep() -> void:
 	_close_screen()
 	if GameState.forced_rest_today:
 		_open_rest_day.call_deferred()
+	elif GameState.ch1_announce_pending:
+		GameState.ch1_announce_pending = false
+		GameState.save_game()
+		_open_chapter_announce.call_deferred()
 
 
 # --- UI --------------------------------------------------------------------
@@ -1316,6 +1471,12 @@ func _setup_ui() -> void:
 	_hud_dream_bar = _hud_bar(Color("e7b24c"), Vector2(84, 14))
 	dream_row.add_child(_hud_dream_bar)
 
+	_hud_chapter = Label.new()
+	_hud_chapter.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_chapter.add_theme_color_override("font_color", Color("6d5a8a"))
+	_hud_chapter.add_theme_font_size_override("font_size", 18)
+	hud.add_child(_hud_chapter)
+
 
 func _hud_icon(path: String, px: int) -> TextureRect:
 	var icon := TextureRect.new()
@@ -1381,8 +1542,16 @@ func _refresh_hud() -> void:
 	else:
 		_hud_dream_label.text = "€%d/€%d" % [GameState.dream_saved, GameState.dream_cost()]
 		_hud_dream_bar.value = GameState.dream_progress() * 100.0
+	if GameState.ch1_active:
+		_hud_chapter.text = "Festival €%d/€%d · day %d" % [
+			GameState.ch1_progress(), GameState.ch1_ticket(), GameState.ch1_deadline]
+	elif GameState.ch1_done:
+		_hud_chapter.text = ""
+	else:
+		_hud_chapter.text = ""
 	_update_dream_spot()
 	_update_home_badge()
+	_update_string_lights()
 
 
 const CARD_TOP := 196.0

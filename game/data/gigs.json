@@ -1,0 +1,33 @@
+{
+	"comment": "Notice Board gigs (spec §7): 1-3 fresh offers daily, one slot each, paid instantly. Skill scaling arrives with the skills system; base pay for now. The quiz gig is the learning-is-earning mechanic (design doc §11 layer 2) — wrong answers still pay a kind tip and show the right answer.",
+	"daily_min": 1,
+	"daily_max": 3,
+	"gigs": [
+		{ "id": "dog_walk", "label": "Dog walking", "base": 12 },
+		{ "id": "errand", "label": "Errand run", "base": 10 },
+		{ "id": "bake_sale", "label": "Bake-sale help", "base": 15 },
+		{ "id": "fix_it", "label": "Fix-it visit", "base": 15 },
+		{ "id": "quiz", "label": "Bank quiz night", "base": 15, "quiz": true }
+	],
+	"quiz": {
+		"pay_correct": 15,
+		"pay_wrong": 5,
+		"questions": [
+			{
+				"q": "You save €10 every week. How much do you have after 4 weeks?",
+				"answers": ["€14", "€40", "€410"],
+				"correct": 1
+			},
+			{
+				"q": "The bank pays you interest on savings. What does that mean?",
+				"answers": ["You pay the bank", "The bank pays YOU for saving", "It's a kind of fine"],
+				"correct": 1
+			},
+			{
+				"q": "Which of these is a NEED, not a want?",
+				"answers": ["A new phone case", "Groceries", "A cinema ticket"],
+				"correct": 1
+			}
+		]
+	}
+}

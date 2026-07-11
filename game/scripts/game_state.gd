@@ -13,6 +13,7 @@ signal changed
 
 const ECONOMY_PATH := "res://data/economy.json"
 const EVENTS_PATH := "res://data/events.json"
+const GIGS_PATH := "res://data/gigs.json"
 const SAVE_PATH := "user://townling_save.json"
 
 var econ: Dictionary = {}
@@ -39,6 +40,18 @@ var pending_events: Array = []    # deferred consequences: {id, day}
 var last_event_id: String = ""    # avoid immediate repeats
 var rng := RandomNumberGenerator.new()
 
+# Notice Board gigs (spec §7): fresh offers daily, instant pay.
+var gigs_cfg: Dictionary = {}
+var gigs_today: Array = []        # gig ids still available today
+var quiz_q_today: int = 0         # tonight's quiz question index
+
+# Chapter 1 — The Festival (spec §11).
+var ch1_active: bool = false
+var ch1_done: bool = false
+var ch1_deadline: int = 0
+var ch1_attempt: int = 1
+var ch1_announce_pending: bool = false
+
 const LEDGER_MAX := 40
 
 ## Disable to keep unit tests from touching user:// saves.
@@ -48,9 +61,20 @@ var autosave: bool = true
 func _ready() -> void:
 	load_economy()
 	load_events()
+	load_gigs()
 	rng.randomize()
 	if not load_game():
 		init_new()
+
+
+func load_gigs() -> void:
+	var f := FileAccess.open(GIGS_PATH, FileAccess.READ)
+	if f == null:
+		push_error("gigs.json missing")
+		return
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) == TYPE_DICTIONARY:
+		gigs_cfg = parsed
 
 
 func load_events() -> void:
@@ -91,6 +115,12 @@ func init_new() -> void:
 	tonight_prepared_day = 0
 	pending_events = []
 	last_event_id = ""
+	ch1_active = false
+	ch1_done = false
+	ch1_deadline = 0
+	ch1_attempt = 1
+	ch1_announce_pending = false
+	roll_gigs()
 	_after_change()
 
 
@@ -315,6 +345,121 @@ func _event_def(id: String) -> Dictionary:
 	return {}
 
 
+# --- Gigs (spec §7: hustle is fast, effortful, capped) -------------------------
+
+func roll_gigs() -> void:
+	gigs_today = []
+	var pool: Array = gigs_cfg.get("gigs", [])
+	if pool.is_empty():
+		return
+	var count := rng.randi_range(int(gigs_cfg.get("daily_min", 1)), int(gigs_cfg.get("daily_max", 3)))
+	var ids: Array = []
+	for g in pool:
+		ids.append(g.get("id", ""))
+	ids.shuffle()
+	for i in mini(count, ids.size()):
+		gigs_today.append(ids[i])
+	var questions: Array = gigs_cfg.get("quiz", {}).get("questions", [])
+	if questions.size() > 0:
+		quiz_q_today = rng.randi_range(0, questions.size() - 1)
+
+
+func gig_def(id: String) -> Dictionary:
+	for g in gigs_cfg.get("gigs", []):
+		if g.get("id", "") == id:
+			return g
+	return {}
+
+
+## A plain gig: one slot, instant base pay.
+func take_gig(id: String) -> Dictionary:
+	if slots_left <= 0 or not gigs_today.has(id):
+		return {}
+	var g := gig_def(id)
+	if g.is_empty() or bool(g.get("quiz", false)):
+		return {}
+	var pay := int(g.get("base", 10))
+	slots_left -= 1
+	wallet += pay
+	earned_today += pay
+	gigs_today.erase(id)
+	_log(str(g.get("label", "Gig")), pay)
+	_after_change()
+	return {"pay": pay, "label": g.get("label", "Gig")}
+
+
+## The knowledge gig: answer a money question; right pays well, wrong still
+## pays a kind tip and teaches the correct answer (never a wall).
+func answer_quiz(answer_idx: int) -> Dictionary:
+	if slots_left <= 0 or not gigs_today.has("quiz"):
+		return {}
+	var quiz: Dictionary = gigs_cfg.get("quiz", {})
+	var questions: Array = quiz.get("questions", [])
+	if questions.is_empty():
+		return {}
+	var q: Dictionary = questions[quiz_q_today % questions.size()]
+	var correct := answer_idx == int(q.get("correct", 0))
+	var pay := int(quiz.get("pay_correct", 15)) if correct else int(quiz.get("pay_wrong", 5))
+	slots_left -= 1
+	wallet += pay
+	earned_today += pay
+	gigs_today.erase("quiz")
+	_log("Bank quiz night", pay)
+	_after_change()
+	var answers: Array = q.get("answers", [])
+	return {"correct": correct, "pay": pay,
+		"answer_text": str(answers[int(q.get("correct", 0))])}
+
+
+func quiz_question() -> Dictionary:
+	var questions: Array = gigs_cfg.get("quiz", {}).get("questions", [])
+	if questions.is_empty():
+		return {}
+	return questions[quiz_q_today % questions.size()]
+
+
+# --- Chapter 1: The Festival (spec §11) ----------------------------------------
+
+func ch1_cfg() -> Dictionary:
+	return econ.get("chapter1", {})
+
+
+func ch1_ticket() -> int:
+	return int(ch1_cfg().get("ticket", 100))
+
+
+func ch1_progress() -> int:
+	return mini(wallet + savings, ch1_ticket())
+
+
+## Due tonight? Resolution happens in the evening ritual of the deadline day.
+func ch1_due_tonight() -> bool:
+	return ch1_active and day >= ch1_deadline
+
+
+## Pay for the festival if the money is there (wallet first, then savings).
+func resolve_chapter1() -> Dictionary:
+	if not ch1_active:
+		return {}
+	var ticket := ch1_ticket()
+	if wallet + savings >= ticket:
+		var from_wallet: int = mini(wallet, ticket)
+		wallet -= from_wallet
+		var rest := ticket - from_wallet
+		savings -= rest
+		spent_today += ticket
+		_log("Festival ticket", -ticket)
+		ch1_active = false
+		ch1_done = true
+		wellbeing = clampi(wellbeing + 10, 0, 100)
+		_after_change()
+		return {"success": true, "ticket": ticket}
+	ch1_attempt += 1
+	ch1_deadline = day + int(ch1_cfg().get("retry_days", 21))
+	_after_change()
+	return {"success": false, "ticket": ticket, "next_deadline": ch1_deadline}
+
+
 # --- Day cycle ---------------------------------------------------------------
 
 ## Whether tonight's summary will include rent (every 7th day).
@@ -355,6 +500,12 @@ func end_day() -> void:
 		slots_left = 0
 		wellbeing = clampi(wellbeing + int(fr.get("recovery", 40)), 0, 100)
 		zero_days = 0
+	roll_gigs()
+	# Chapter 1 begins the morning after the first rent night (spec §2 day 7).
+	if not ch1_done and not ch1_active and day == int(ch1_cfg().get("start_day", 7)):
+		ch1_active = true
+		ch1_deadline = day + int(ch1_cfg().get("duration", 14))
+		ch1_announce_pending = true
 	earned_today = 0
 	spent_today = 0
 	groceries_today = ""
@@ -400,6 +551,10 @@ func save_game() -> void:
 		"ledger": ledger, "tonight_event_id": tonight_event_id,
 		"tonight_prepared_day": tonight_prepared_day,
 		"pending_events": pending_events, "last_event_id": last_event_id,
+		"gigs_today": gigs_today, "quiz_q_today": quiz_q_today,
+		"ch1_active": ch1_active, "ch1_done": ch1_done,
+		"ch1_deadline": ch1_deadline, "ch1_attempt": ch1_attempt,
+		"ch1_announce_pending": ch1_announce_pending,
 	}))
 
 
@@ -429,5 +584,12 @@ func load_game() -> bool:
 	tonight_prepared_day = int(parsed.get("tonight_prepared_day", 0))
 	pending_events = parsed.get("pending_events", [])
 	last_event_id = str(parsed.get("last_event_id", ""))
+	gigs_today = parsed.get("gigs_today", [])
+	quiz_q_today = int(parsed.get("quiz_q_today", 0))
+	ch1_active = bool(parsed.get("ch1_active", false))
+	ch1_done = bool(parsed.get("ch1_done", false))
+	ch1_deadline = int(parsed.get("ch1_deadline", 0))
+	ch1_attempt = int(parsed.get("ch1_attempt", 1))
+	ch1_announce_pending = bool(parsed.get("ch1_announce_pending", false))
 	changed.emit()
 	return true

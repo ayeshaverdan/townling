@@ -18,6 +18,7 @@ func _init() -> void:
 	gs.autosave = false
 	gs.load_economy()
 	gs.load_events()
+	gs.load_gigs()
 	gs.init_new()
 
 	check(gs.wallet == 50, "starter wallet €50")
@@ -181,6 +182,52 @@ func _init() -> void:
 	gs.groceries_today = ""
 	gs.end_day()
 	check(gs.wellbeing == 40, "hungry night -25 wipes the rest gain")
+
+	# Gigs: daily roll, instant pay, quiz teaches either way.
+	gs.init_new()
+	check(gs.gigs_today.size() >= 1 and gs.gigs_today.size() <= 3, "1-3 gigs rolled")
+	gs.gigs_today = ["dog_walk", "quiz"]
+	var w1: int = gs.wallet
+	var gg: Dictionary = gs.take_gig("dog_walk")
+	check(gg.get("pay", 0) == 12 and gs.wallet == w1 + 12, "dog walking pays €12")
+	check(not gs.gigs_today.has("dog_walk"), "taken gig leaves the board")
+	check(gs.take_gig("dog_walk").is_empty(), "cannot take twice")
+	gs.quiz_q_today = 0
+	var qa: Dictionary = gs.answer_quiz(1)
+	check(qa.get("correct", false) and qa.get("pay", 0) == 15, "right answer pays €15")
+	gs.gigs_today = ["quiz"]
+	gs.quiz_q_today = 1
+	var qw: Dictionary = gs.answer_quiz(0)
+	check(not qw.get("correct", true) and qw.get("pay", 0) == 5, "wrong answer still pays €5")
+	check(qw.get("answer_text", "") == "The bank pays YOU for saving", "teaches the right answer")
+
+	# Chapter 1: starts day 7, succeeds when the money is there.
+	gs.init_new()
+	gs.day = 6
+	gs.groceries_today = "normal"
+	gs.end_day()
+	check(gs.ch1_active and gs.ch1_deadline == 21, "festival announced day 7, deadline 21")
+	check(gs.ch1_announce_pending, "announcement queued")
+	gs.day = 21
+	gs.wallet = 80
+	gs.savings = 30
+	check(gs.ch1_due_tonight(), "due on deadline night")
+	var c1: Dictionary = gs.resolve_chapter1()
+	check(c1.get("success", false), "festival afforded")
+	check(gs.wallet == 0 and gs.savings == 10, "€100 paid wallet-first")
+	check(gs.ch1_done and not gs.ch1_active, "chapter complete")
+
+	# Failure path: attempt 2 with a new deadline.
+	gs.init_new()
+	gs.ch1_active = true
+	gs.ch1_deadline = 21
+	gs.day = 21
+	gs.wallet = 40
+	gs.savings = 0
+	var c1f: Dictionary = gs.resolve_chapter1()
+	check(not c1f.get("success", true), "festival missed when short")
+	check(gs.ch1_attempt == 2 and gs.ch1_deadline == 42, "attempt 2, day 42")
+	check(gs.ch1_active, "chapter still running")
 
 	if failures == 0:
 		print("ALL TESTS PASSED")
