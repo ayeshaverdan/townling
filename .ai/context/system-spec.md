@@ -197,7 +197,9 @@ Effects: below 30, shift pay −20% and mini-games get harder (the money-problem
 
 ## 10. Events — the Launch Shock Deck
 
-Fired from the evening slot (~1 per 2–3 days, 60/40 negative/positive) and at payday. Every card: situation → 2–3 priced choices → consequence, some delayed. Fifteen launch cards (Band B rated):
+Fired from the evening slot (~1 per 2–3 days, 60/40 negative/positive) and at payday.
+
+*Pacing amendment v1.1 (July 2026, playtest: "shocks daily = fatigue" — kids compress many in-game days into one sitting):* the fun-test build paces shocks on a **min/max-gap cadence** instead of a nightly dice roll: never within 4 days of the last shock, guaranteed by 7 (≈ once a week), modest chance in between; positives are lighter (20%/night, 2-day gap) so kind evenings outnumber shocks; deferred consequences ("ignored problems return worse") bypass the cadence but reset the shock clock. First random shock lands day 5–8 — the first week is for learning to earn. All values in `events.json → pacing`. Every card: situation → 2–3 priced choices → consequence, some delayed. Fifteen launch cards (Band B rated):
 
 | Card | Choices (price → effect) |
 |---|---|

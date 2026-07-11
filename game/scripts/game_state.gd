@@ -38,6 +38,8 @@ var tonight_event_id: String = "" # card queued for tonight ("" = quiet night)
 var tonight_prepared_day: int = 0 # idempotence guard for prepare_tonight()
 var pending_events: Array = []    # deferred consequences: {id, day}
 var last_event_id: String = ""    # avoid immediate repeats
+var last_shock_day: int = 1       # cadence clock: shocks every min..max gap days
+var last_positive_day: int = 1
 var rng := RandomNumberGenerator.new()
 
 # Notice Board gigs (spec §7): fresh offers daily, instant pay.
@@ -115,6 +117,8 @@ func init_new() -> void:
 	tonight_prepared_day = 0
 	pending_events = []
 	last_event_id = ""
+	last_shock_day = 1
+	last_positive_day = 1
 	ch1_active = false
 	ch1_done = false
 	ch1_deadline = 0
@@ -273,14 +277,35 @@ func prepare_tonight() -> void:
 	if day == 1:
 		tonight_event_id = "found_coin"  # spec §2: night one never punishes
 		return
+	# Earned consequences fire when due — and reset the shock clock so a
+	# random shock never piles on in the same week.
 	for i in pending_events.size():
 		if int(pending_events[i].get("day", 0)) <= day:
 			tonight_event_id = str(pending_events[i].get("id", ""))
 			pending_events.remove_at(i)
+			last_shock_day = day
 			return
-	if rng.randf() >= float(events.get("nightly_chance", 0.4)):
-		return
-	var want_shock := rng.randf() < float(events.get("negative_share", 0.6))
+	# Shock cadence (pacing v1.1): never before min_gap, guaranteed by
+	# max_gap, a modest chance in between. No streaks, tension preserved.
+	var pacing: Dictionary = events.get("pacing", {})
+	var sp: Dictionary = pacing.get("shock", {})
+	var gap := day - last_shock_day
+	if gap >= int(sp.get("min_gap_days", 4)):
+		if gap >= int(sp.get("max_gap_days", 7)) or rng.randf() < float(sp.get("chance", 0.25)):
+			tonight_event_id = _draw_card(true)
+			if tonight_event_id != "":
+				last_shock_day = day
+				return
+	# Positive events: lighter, with a small gap of their own.
+	var pp: Dictionary = pacing.get("positive", {})
+	if day - last_positive_day >= int(pp.get("min_gap_days", 2)) \
+			and rng.randf() < float(pp.get("chance", 0.2)):
+		tonight_event_id = _draw_card(false)
+		if tonight_event_id != "":
+			last_positive_day = day
+
+
+func _draw_card(want_shock: bool) -> String:
 	var pool: Array = []
 	for card in events.get("cards", []):
 		if not bool(card.get("pool", true)):
@@ -291,8 +316,8 @@ func prepare_tonight() -> void:
 		if is_shock == want_shock:
 			pool.append(card)
 	if pool.is_empty():
-		return
-	tonight_event_id = str(pool[rng.randi_range(0, pool.size() - 1)].get("id", ""))
+		return ""
+	return str(pool[rng.randi_range(0, pool.size() - 1)].get("id", ""))
 
 
 func tonight_event() -> Dictionary:
@@ -551,6 +576,7 @@ func save_game() -> void:
 		"ledger": ledger, "tonight_event_id": tonight_event_id,
 		"tonight_prepared_day": tonight_prepared_day,
 		"pending_events": pending_events, "last_event_id": last_event_id,
+		"last_shock_day": last_shock_day, "last_positive_day": last_positive_day,
 		"gigs_today": gigs_today, "quiz_q_today": quiz_q_today,
 		"ch1_active": ch1_active, "ch1_done": ch1_done,
 		"ch1_deadline": ch1_deadline, "ch1_attempt": ch1_attempt,
@@ -584,6 +610,8 @@ func load_game() -> bool:
 	tonight_prepared_day = int(parsed.get("tonight_prepared_day", 0))
 	pending_events = parsed.get("pending_events", [])
 	last_event_id = str(parsed.get("last_event_id", ""))
+	last_shock_day = int(parsed.get("last_shock_day", 1))
+	last_positive_day = int(parsed.get("last_positive_day", 1))
 	gigs_today = parsed.get("gigs_today", [])
 	quiz_q_today = int(parsed.get("quiz_q_today", 0))
 	ch1_active = bool(parsed.get("ch1_active", false))

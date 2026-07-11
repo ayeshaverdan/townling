@@ -1,99 +1,245 @@
 {
-	"comment": "Evening event deck (spec §10/§12): fixed slot, surprising content. Band-rated content-as-data per spec §14.2. wallet/wellbeing are deltas; defer schedules a follow-up card 'chance' of the time, min/max days later. pool:false = only scripted/deferred, never drawn randomly.",
-	"nightly_chance": 0.4,
-	"negative_share": 0.6,
+	"comment": "Evening event deck (spec §10/§12). Pacing v1.1: shocks on a min/max-gap cadence (guaranteed within max_gap, never before min_gap — 'once a week-ish'), positives lighter with a small gap; deferred consequences bypass the cadence but reset the shock clock. Band-rated content-as-data per spec §14.2.",
 	"cards": [
 		{
-			"id": "found_coin", "type": "positive", "band": "B", "pool": false,
+			"id": "found_coin",
+			"type": "positive",
+			"band": "B",
+			"pool": false,
 			"title": "A lucky evening",
 			"text": "A neighbour waves hello… and look — a €5 coin by the fountain! Welcome to Townling.",
 			"choices": [
-				{ "id": "take", "label": "Lucky me!", "wallet": 5, "wellbeing": 2, "log": "Found coin" }
+				{
+					"id": "take",
+					"label": "Lucky me!",
+					"wallet": 5,
+					"wellbeing": 2,
+					"log": "Found coin"
+				}
 			]
 		},
 		{
-			"id": "phone_cracks", "type": "shock", "band": "B",
+			"id": "phone_cracks",
+			"type": "shock",
+			"band": "B",
 			"title": "Cracked screen!",
 			"text": "Your phone slipped and the screen cracked. It still works… mostly.",
 			"choices": [
-				{ "id": "repair", "label": "Repair it", "wallet": -60, "log": "Phone repair" },
-				{ "id": "live_with", "label": "Live with the crack", "wellbeing": -3,
-					"defer": { "id": "phone_broken", "chance": 0.5, "min_days": 2, "max_days": 4 } },
-				{ "id": "replace", "label": "Buy a new phone", "wallet": -120, "wellbeing": 5, "log": "New phone" }
+				{
+					"id": "repair",
+					"label": "Repair it",
+					"wallet": -60,
+					"log": "Phone repair"
+				},
+				{
+					"id": "live_with",
+					"label": "Live with the crack",
+					"wellbeing": -3,
+					"defer": {
+						"id": "phone_broken",
+						"chance": 0.5,
+						"min_days": 2,
+						"max_days": 4
+					}
+				},
+				{
+					"id": "replace",
+					"label": "Buy a new phone",
+					"wallet": -120,
+					"wellbeing": 5,
+					"log": "New phone"
+				}
 			]
 		},
 		{
-			"id": "phone_broken", "type": "shock", "band": "B", "pool": false,
+			"id": "phone_broken",
+			"type": "shock",
+			"band": "B",
+			"pool": false,
 			"title": "The phone gave up",
 			"text": "The cracked screen finally died completely. You need a working phone.",
 			"choices": [
-				{ "id": "replace_now", "label": "Get it fixed properly", "wallet": -90, "log": "Phone fix (worse)" }
+				{
+					"id": "replace_now",
+					"label": "Get it fixed properly",
+					"wallet": -90,
+					"log": "Phone fix (worse)"
+				}
 			]
 		},
 		{
-			"id": "birthday", "type": "shock", "band": "B",
+			"id": "birthday",
+			"type": "shock",
+			"band": "B",
 			"title": "Friend's birthday!",
 			"text": "Your best friend's birthday party is tomorrow. What do you bring?",
 			"choices": [
-				{ "id": "gift", "label": "A real gift", "wallet": -20, "wellbeing": 5, "log": "Birthday gift" },
-				{ "id": "card", "label": "A homemade card", "wallet": -3, "wellbeing": 1, "log": "Birthday card" },
-				{ "id": "skip", "label": "Skip the party", "wellbeing": -3 }
+				{
+					"id": "gift",
+					"label": "A real gift",
+					"wallet": -20,
+					"wellbeing": 5,
+					"log": "Birthday gift"
+				},
+				{
+					"id": "card",
+					"label": "A homemade card",
+					"wallet": -3,
+					"wellbeing": 1,
+					"log": "Birthday card"
+				},
+				{
+					"id": "skip",
+					"label": "Skip the party",
+					"wellbeing": -3
+				}
 			]
 		},
 		{
-			"id": "school_trip", "type": "shock", "band": "B",
+			"id": "school_trip",
+			"type": "shock",
+			"band": "B",
 			"title": "School trip announced",
 			"text": "The class is going to the science museum! Tickets cost €35.",
 			"choices": [
-				{ "id": "pay", "label": "Pay for the trip", "wallet": -35, "wellbeing": 3, "log": "School trip" },
-				{ "id": "miss", "label": "Miss it this time", "wellbeing": -5 }
+				{
+					"id": "pay",
+					"label": "Pay for the trip",
+					"wallet": -35,
+					"wellbeing": 3,
+					"log": "School trip"
+				},
+				{
+					"id": "miss",
+					"label": "Miss it this time",
+					"wellbeing": -5
+				}
 			]
 		},
 		{
-			"id": "rain_shoes", "type": "shock", "band": "B",
+			"id": "rain_shoes",
+			"type": "shock",
+			"band": "B",
 			"title": "Soaked shoes",
 			"text": "A downpour caught you on the way home — your shoes are ruined.",
 			"choices": [
-				{ "id": "replace", "label": "New shoes", "wallet": -25, "log": "New shoes" },
-				{ "id": "dry", "label": "Dry them by the heater", "wellbeing": -1,
-					"defer": { "id": "rain_shoes", "chance": 0.1, "min_days": 2, "max_days": 3 } }
+				{
+					"id": "replace",
+					"label": "New shoes",
+					"wallet": -25,
+					"log": "New shoes"
+				},
+				{
+					"id": "dry",
+					"label": "Dry them by the heater",
+					"wellbeing": -1,
+					"defer": {
+						"id": "rain_shoes",
+						"chance": 0.1,
+						"min_days": 2,
+						"max_days": 3
+					}
+				}
 			]
 		},
 		{
-			"id": "fridge_breaks", "type": "shock", "band": "B",
+			"id": "fridge_breaks",
+			"type": "shock",
+			"band": "B",
 			"title": "The fridge broke!",
 			"text": "A sad clunk from the kitchen… the fridge is warm inside.",
 			"choices": [
-				{ "id": "repair", "label": "Proper repair", "wallet": -80, "log": "Fridge repair" },
-				{ "id": "used", "label": "Cheap used fridge", "wallet": -50, "log": "Used fridge",
-					"defer": { "id": "fridge_breaks", "chance": 0.1, "min_days": 3, "max_days": 6 } },
-				{ "id": "takeaway", "label": "Takeaway for a while", "wallet": -40, "wellbeing": 2, "log": "Takeaway week" }
+				{
+					"id": "repair",
+					"label": "Proper repair",
+					"wallet": -80,
+					"log": "Fridge repair"
+				},
+				{
+					"id": "used",
+					"label": "Cheap used fridge",
+					"wallet": -50,
+					"log": "Used fridge",
+					"defer": {
+						"id": "fridge_breaks",
+						"chance": 0.1,
+						"min_days": 3,
+						"max_days": 6
+					}
+				},
+				{
+					"id": "takeaway",
+					"label": "Takeaway for a while",
+					"wallet": -40,
+					"wellbeing": 2,
+					"log": "Takeaway week"
+				}
 			]
 		},
 		{
-			"id": "grandma", "type": "positive", "band": "B",
+			"id": "grandma",
+			"type": "positive",
+			"band": "B",
 			"title": "Grandma visits!",
 			"text": "Grandma dropped by with cookies — and a little pocket money.",
 			"choices": [
-				{ "id": "hug", "label": "Best evening ever", "wallet": 10, "wellbeing": 10, "log": "Pocket money" }
+				{
+					"id": "hug",
+					"label": "Best evening ever",
+					"wallet": 10,
+					"wellbeing": 10,
+					"log": "Pocket money"
+				}
 			]
 		},
 		{
-			"id": "tax_refund", "type": "positive", "band": "B",
+			"id": "tax_refund",
+			"type": "positive",
+			"band": "B",
 			"title": "A letter from the town hall",
 			"text": "You paid a little too much tax this year — Townling is paying it back!",
 			"choices": [
-				{ "id": "nice", "label": "Money back? Nice!", "wallet": 25, "log": "Tax refund" }
+				{
+					"id": "nice",
+					"label": "Money back? Nice!",
+					"wallet": 25,
+					"log": "Tax refund"
+				}
 			]
 		},
 		{
-			"id": "festival", "type": "positive", "band": "B",
+			"id": "festival",
+			"type": "positive",
+			"band": "B",
 			"title": "Street festival tonight!",
 			"text": "Music and food stalls by the fountain. Everyone's there!",
 			"choices": [
-				{ "id": "enjoy", "label": "Enjoy the evening", "wallet": -10, "wellbeing": 6, "log": "Festival fun" },
-				{ "id": "work_stall", "label": "Help at a stall", "wallet": 20, "wellbeing": -2, "log": "Festival stall" }
+				{
+					"id": "enjoy",
+					"label": "Enjoy the evening",
+					"wallet": -10,
+					"wellbeing": 6,
+					"log": "Festival fun"
+				},
+				{
+					"id": "work_stall",
+					"label": "Help at a stall",
+					"wallet": 20,
+					"wellbeing": -2,
+					"log": "Festival stall"
+				}
 			]
 		}
-	]
+	],
+	"pacing": {
+		"shock": {
+			"min_gap_days": 4,
+			"max_gap_days": 7,
+			"chance": 0.25
+		},
+		"positive": {
+			"min_gap_days": 2,
+			"chance": 0.2
+		}
+	}
 }

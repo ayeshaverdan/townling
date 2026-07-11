@@ -229,6 +229,40 @@ func _init() -> void:
 	check(gs.ch1_attempt == 2 and gs.ch1_deadline == 42, "attempt 2, day 42")
 	check(gs.ch1_active, "chapter still running")
 
+	# Shock cadence (pacing v1.1): min gap, guaranteed max gap, clock resets.
+	gs.init_new()
+	gs.rng.seed = 7
+	var early_shock := false
+	for d in [2, 3, 4]:
+		gs.day = d
+		gs.tonight_prepared_day = 0
+		gs.prepare_tonight()
+		if gs.tonight_event_id != "":
+			var tcard: Dictionary = gs.tonight_event()
+			if tcard.get("type", "") == "shock":
+				early_shock = true
+		gs.tonight_event_id = ""
+	check(not early_shock, "no random shock before day 5 (min gap 4)")
+	# Guarantee: with the clock 7 days stale a shock MUST fire even if the
+	# chance roll would fail.
+	gs.init_new()
+	gs.day = 10
+	gs.last_shock_day = 3
+	gs.last_positive_day = 10
+	gs.tonight_prepared_day = 0
+	gs.prepare_tonight()
+	var forced_card: Dictionary = gs.tonight_event()
+	check(forced_card.get("type", "") == "shock", "shock guaranteed at max gap 7")
+	check(gs.last_shock_day == 10, "shock clock reset on fire")
+	# Deferred consequences reset the clock too.
+	gs.init_new()
+	gs.day = 6
+	gs.schedule_event("phone_broken", 6)
+	gs.tonight_prepared_day = 0
+	gs.prepare_tonight()
+	check(gs.tonight_event_id == "phone_broken", "deferred fires when due")
+	check(gs.last_shock_day == 6, "deferred resets the shock clock")
+
 	if failures == 0:
 		print("ALL TESTS PASSED")
 		quit(0)
