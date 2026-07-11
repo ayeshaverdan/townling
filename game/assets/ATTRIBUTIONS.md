@@ -7,7 +7,14 @@ This clears the licensing bar for a kids' app and later school/B2B distribution
 | Pack | Location | Author / Source | License | Commercial | Credit required |
 |------|----------|-----------------|---------|-----------|-----------------|
 | Kenney — Starter Kit: City Builder | `kenney/` | Kenney · https://github.com/KenneyNL/Starter-Kit-City-Builder | MIT (kit) / CC0 (models) | ✅ Yes | ❌ No (optional) |
+| Kenney — City Kit (Suburban) 2.0 | `kenney/suburban/` | Kenney · https://kenney.nl/assets/city-kit-suburban | CC0 | ✅ Yes | ❌ No (optional) |
+| Kenney — City Kit (Commercial) 2.1 | `kenney/commercial/` | Kenney · https://kenney.nl/assets/city-kit-commercial | CC0 | ✅ Yes | ❌ No (optional) |
+| Kenney — Car Kit 3.1 | `kenney/cars/` | Kenney · https://kenney.nl/assets/car-kit | CC0 | ✅ Yes | ❌ No (optional) |
 | KayKit — Adventurers Character Pack v2.0 | `characters/` | Kay Lousberg · https://kaylousberg.itch.io/ | CC0 1.0 | ✅ Yes | ❌ No (optional) |
+
+Only the models we use are versioned (subset of each kit); each kit's own
+`License.txt` sits in its folder. Each kit's `Textures/colormap.png` is our
+warm-palette remap of the original (kept as `colormap-original.png`).
 
 Optional credit lines, if we choose to include them:
 > City models by Kenney (kenney.nl).

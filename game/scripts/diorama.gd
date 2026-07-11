@@ -12,25 +12,28 @@ extends Node3D
 const KEN := "res://assets/kenney/"
 const TILE := 1.0  # world units per grid cell
 
-## The six launch landmarks: name, Kenney model, grid cell, purpose blurb.
+## The six launch landmarks: name, Kenney model (subpath under assets/kenney/),
+## uniform scale, grid cell, purpose blurb. Home is a pitched-roof suburban
+## house and Shop a commercial storefront with a built-in awning (sister kits).
 const LANDMARKS := [
-	{"name": "Bank", "model": "building-small-c", "cell": Vector2i(1, 1),
+	{"name": "Bank", "model": "building-small-c", "scale": 1.0, "cell": Vector2i(1, 1),
 		"blurb": "Save your coins in the jar and watch them grow."},
-	{"name": "School", "model": "building-small-b", "cell": Vector2i(3, 1),
+	{"name": "School", "model": "building-small-b", "scale": 1.0, "cell": Vector2i(3, 1),
 		"blurb": "Take a class to earn a skill star."},
-	{"name": "Workplace", "model": "building-small-d", "cell": Vector2i(5, 1),
+	{"name": "Workplace", "model": "building-small-d", "scale": 1.0, "cell": Vector2i(5, 1),
 		"blurb": "Work a shift and earn your weekly salary."},
-	{"name": "Home", "model": "building-small-a", "cell": Vector2i(1, 5),
+	{"name": "Home", "model": "suburban/building-type-h", "scale": 0.75, "cell": Vector2i(1, 5),
 		"blurb": "Rest to refill energy, decorate, plan your day."},
-	{"name": "Shop", "model": "building-garage", "cell": Vector2i(3, 5),
+	{"name": "Shop", "model": "commercial/building-c", "scale": 1.0, "cell": Vector2i(3, 5),
 		"blurb": "Buy groceries and the things you need."},
-	{"name": "Notice Board", "model": "building-garage", "cell": Vector2i(5, 5),
+	{"name": "Notice Board", "model": "building-garage", "scale": 1.0, "cell": Vector2i(5, 5),
 		"blurb": "Find gigs and quick jobs for extra coins."},
 ]
-## Model heights (world units) for label placement + pick boxes, from glTF bounds.
+## Model heights (world units, pre-scale) for labels + pick boxes, from glTF bounds.
 const HEIGHTS := {
 	"building-small-a": 0.95, "building-small-b": 1.63, "building-small-c": 1.75,
 	"building-small-d": 1.0, "building-garage": 0.55,
+	"suburban/building-type-h": 0.74, "commercial/building-c": 0.89,
 }
 const COLS := 7
 const ROWS := 7
@@ -146,11 +149,12 @@ func _build_town() -> void:
 	# Landmarks + labels + pick boxes.
 	for lm in LANDMARKS:
 		var cell: Vector2i = lm["cell"]
-		var inst := _spawn(lm["model"], cell)
+		var lm_scale: float = lm.get("scale", 1.0)
+		var inst := _spawn(lm["model"], cell, lm.get("rot", 0.0), lm_scale)
 		if inst == null:
 			continue
-		var height: float = HEIGHTS.get(lm["model"], 1.5)
-		_add_label(inst, lm["name"], height)
+		var height: float = HEIGHTS.get(lm["model"], 1.5) * lm_scale
+		_add_label_at(Vector3(cell.x * TILE, height + 0.35, cell.y * TILE), lm["name"])
 		var box := AABB(
 			Vector3(cell.x * TILE - 0.5, 0.0, cell.y * TILE - 0.5),
 			Vector3(TILE, height, TILE)
@@ -191,16 +195,28 @@ func _build_town() -> void:
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
 	_scatter_confetti()
 
+	# Street life: cars on the two lanes, a delivery truck by the Shop.
+	# (Car Kit uses a larger unit scale; ~0.18 fits our 1x1 tiles.)
+	_spawn_free("cars/taxi", Vector3(0.9, 0.05, 2.80), 90.0, 0.18)
+	_spawn_free("cars/sedan", Vector3(4.6, 0.05, 3.22), -90.0, 0.18)
+	_spawn_free("cars/delivery", Vector3(3.0, 0.05, 3.20), -90.0, 0.18)
 
-## Instance a Kenney model at grid (col, row), rotated about Y.
-func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0) -> Node3D:
+
+## Instance a Kenney model at grid (col, row), rotated about Y, optionally scaled.
+func _spawn(model: String, cell: Vector2i, rot_deg: float = 0.0, scale: float = 1.0) -> Node3D:
+	return _spawn_free(model, Vector3(cell.x * TILE, 0.0, cell.y * TILE), rot_deg, scale)
+
+
+## Instance a Kenney model at a free world position.
+func _spawn_free(model: String, pos: Vector3, rot_deg: float = 0.0, scale: float = 1.0) -> Node3D:
 	var packed: Resource = load("%s%s.glb" % [KEN, model])
 	if packed == null:
 		push_warning("Missing model: %s" % model)
 		return null
 	var inst: Node3D = packed.instantiate()
-	inst.position = Vector3(cell.x * TILE, 0.0, cell.y * TILE)
+	inst.position = pos
 	inst.rotation.y = deg_to_rad(rot_deg)
+	inst.scale = Vector3.ONE * scale
 	world.add_child(inst)
 	return inst
 
@@ -363,12 +379,7 @@ func _decorate_home(origin: Vector3) -> void:
 func _decorate_shop(origin: Vector3) -> void:
 	var ground := origin + Vector3(0.0, GROUND_Y, 0.0)
 	_sign(ground + Vector3(-0.45, 0.0, 0.52), "SHOP", Color("d98a4a"), 45.0)
-	# Striped awning above the shopfront (front wall at z≈+0.5), angled down.
-	var stripe_cols := [Color("8fd0a8"), Color("f5efdd")]
-	for i in 6:
-		var sx := -0.225 + i * 0.09
-		_box(Vector3(0.088, 0.018, 0.24), stripe_cols[i % 2],
-			origin + Vector3(sx, 0.40, 0.60), 0.0, 22.0)
+	# (The commercial storefront model brings its own awning.)
 	# Produce crates by the entrance.
 	var crates := [
 		{"pos": Vector3(0.30, 0.0, 0.60), "produce": Color("e8863c")},
@@ -448,7 +459,9 @@ func _scatter_confetti() -> void:
 		_box(Vector3(0.06, 0.004, 0.06), s[1], s[0] + Vector3(0, GROUND_Y, 0), s[2])
 
 
-func _add_label(building: Node3D, text: String, height: float) -> void:
+## Floating billboard name label at a world position (world-parented so it
+## never inherits a scaled building's transform).
+func _add_label_at(pos: Vector3, text: String) -> void:
 	var label := Label3D.new()
 	label.text = text
 	label.font = _font
@@ -458,8 +471,8 @@ func _add_label(building: Node3D, text: String, height: float) -> void:
 	label.outline_size = 10
 	label.modulate = Color("1c1b19")
 	label.outline_modulate = Color(1, 1, 1, 0.95)
-	label.position = Vector3(0.0, height + 0.35, 0.0)
-	building.add_child(label)
+	label.position = pos
+	world.add_child(label)
 
 
 func _setup_camera() -> void:
