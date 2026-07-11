@@ -16,15 +16,15 @@ const TILE := 1.0  # world units per grid cell
 ## uniform scale, grid cell, purpose blurb. Home is a pitched-roof suburban
 ## house and Shop a commercial storefront with a built-in awning (sister kits).
 const LANDMARKS := [
-	{"name": "Bank", "model": "building-small-c", "scale": 1.0, "cell": Vector2i(1, 1),
+	{"name": "Bank", "model": "commercial/building-i", "scale": 0.78, "cell": Vector2i(1, 1),
 		"blurb": "Save your coins in the jar and watch them grow."},
-	{"name": "School", "model": "building-small-b", "scale": 1.0, "cell": Vector2i(3, 1),
+	{"name": "School", "model": "commercial/building-e", "scale": 0.88, "cell": Vector2i(3, 1),
 		"blurb": "Take a class to earn a skill star."},
-	{"name": "Workplace", "model": "building-small-d", "scale": 1.0, "cell": Vector2i(5, 1),
+	{"name": "Workplace", "model": "commercial/building-h", "scale": 1.0, "cell": Vector2i(5, 1),
 		"blurb": "Work a shift and earn your weekly salary."},
 	{"name": "Home", "model": "suburban/building-type-h", "scale": 0.75, "cell": Vector2i(1, 5),
 		"blurb": "Rest to refill energy, decorate, plan your day."},
-	{"name": "Shop", "model": "commercial/building-c", "scale": 1.0, "cell": Vector2i(3, 5),
+	{"name": "Shop", "model": "commercial/building-k", "scale": 0.62, "cell": Vector2i(3, 5),
 		"blurb": "Buy groceries and the things you need."},
 	{"name": "Notice Board", "model": "building-garage", "scale": 1.0, "cell": Vector2i(5, 5),
 		"blurb": "Find gigs and quick jobs for extra coins."},
@@ -33,7 +33,10 @@ const LANDMARKS := [
 const HEIGHTS := {
 	"building-small-a": 0.95, "building-small-b": 1.63, "building-small-c": 1.75,
 	"building-small-d": 1.0, "building-garage": 0.55,
-	"suburban/building-type-h": 0.74, "commercial/building-c": 0.89,
+	"suburban/building-type-h": 0.74,
+	"commercial/building-c": 0.89, "commercial/building-e": 0.89,
+	"commercial/building-h": 1.29, "commercial/building-i": 1.68,
+	"commercial/building-k": 1.47,
 }
 const COLS := 7
 const ROWS := 7
