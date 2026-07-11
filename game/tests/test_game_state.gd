@@ -35,7 +35,7 @@ func _init() -> void:
 	check(gs.buy_groceries("cheap").is_empty(), "second groceries blocked")
 
 	check(gs.rest(), "rest consumes last slot")
-	check(gs.wellbeing == 90, "rest +20 wellbeing")
+	check(gs.wellbeing == 85, "rest +15 wellbeing")
 	check(gs.slots_left == 0, "0 slots at dusk")
 	check(gs.work_shift().is_empty(), "no shift with 0 slots")
 
@@ -43,23 +43,25 @@ func _init() -> void:
 	gs.end_day()
 	check(gs.day == 2 and gs.slots_left == 3, "day 2 fresh slots")
 	check(gs.earned_today == 0 and gs.groceries_today == "", "day counters reset")
-	check(gs.wellbeing == 85, "overnight: drift -5, normal food +0")
+	check(gs.wellbeing == 87, "overnight: wear -10, good sleep +12")
 
-	# Fast-forward to day 7 (no food those nights: -5 drift -10 hungry).
+	# Fast-forward to day 7, eating normally each night (+2/night, capped).
 	while gs.day < 7:
+		gs.groceries_today = "normal"
 		gs.end_day()
-	check(gs.wellbeing == 10, "5 hungry nights: 85 - 75 = 10")
+	check(gs.wellbeing == 97, "fed nights sustain you (87 + 5×2)")
 	check(gs.rent_due_tonight(), "rent due day 7")
 	var before: int = gs.wallet
 	gs.end_day()
 	check(gs.wallet == before - 60, "rent €60 charged")
 	check(gs.day == 8, "day 8 after payday night")
-	check(gs.wellbeing == 0, "wellbeing clamps at 0")
+	check(gs.wellbeing == 72, "hungry payday night: 97 - 25 (wear -10, hungry -15)")
 
 	# Rent pushed the wallet negative (48 - 60): allowed by design (debt path).
 	check(gs.wallet == -12, "wallet may go negative from rent")
 
 	# Pay tiers (spec §9 v1.1): exhausted 80%, tired 90%, fine 100%, thriving +€4.
+	gs.wellbeing = 0
 	var tier_r: Dictionary = gs.work_shift()
 	check(str(tier_r.get("tier", "")) == "exhausted", "wellbeing 0 -> exhausted")
 	check(tier_r.get("amount", 0) == 22, "exhausted shift pays €22 (80%)")
@@ -170,6 +172,15 @@ func _init() -> void:
 	gs.resolve_event_choice("live_with")
 	check(gs.pending_events.size() == 1, "ignored problem scheduled to return")
 	check(str(gs.pending_events[0].get("id")) == "phone_broken", "…as the worse card")
+
+	# Rest cannot substitute for food: hungry day with a rest slot still sinks.
+	gs.init_new()
+	gs.wellbeing = 50
+	gs.rest()
+	check(gs.wellbeing == 65, "rest tops up +15")
+	gs.groceries_today = ""
+	gs.end_day()
+	check(gs.wellbeing == 40, "hungry night -25 wipes the rest gain")
 
 	if failures == 0:
 		print("ALL TESTS PASSED")

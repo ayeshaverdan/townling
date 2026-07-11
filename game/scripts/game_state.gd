@@ -329,11 +329,14 @@ func rent_amount() -> int:
 ## Close the day: overnight wellbeing (drift + tonight's food), rent on
 ## day 7/14/…, then the next morning.
 func end_day() -> void:
-	var delta := int(_wb().get("daily_drift", -5))
+	# Sleep quality (spec §9 v1.2): the day wears you down; a night's sleep
+	# restores you only as well as you ate. Hungry nights make things worse —
+	# rest slots can top you up, but they can never replace dinner.
+	var delta := int(_wb().get("day_wear", -10))
 	if groceries_today == "":
-		delta -= int(econ.get("no_food_penalty", 10))
+		delta += int(_wb().get("hungry_night", -15))
 	else:
-		delta += int(_grocery_tier(groceries_today).get("wellbeing", 0))
+		delta += int(_grocery_tier(groceries_today).get("sleep", 12))
 	wellbeing = clampi(wellbeing + delta, 0, 100)
 	if rent_due_tonight():
 		wallet -= rent_amount()

@@ -729,8 +729,11 @@ func _do_event_choice(choice_id: String) -> void:
 ## Spec §9: the mentor-ordered Rest Day card (Aunt Vera's first cameo).
 func _open_rest_day() -> void:
 	_current_screen = "RestDay"
-	_screen_title.text = "Rest day — doctor's… no, AUNT VERA'S orders"
-	_screen_body.text = "You ran yourself completely empty two days in a row, so today you rest. No work, no errands.\n\nA day of rest costs a day of earnings — taking care of yourself is cheaper!\n\n— Aunt Vera"
+	_screen_title.text = "Rest day — Aunt Vera's orders"
+	var shift: Dictionary = GameState.econ.get("courier_shift", {})
+	var missed := (int(shift.get("pay", 24)) + int(shift.get("tip", 4))) \
+		* int(GameState.econ.get("slots_per_day", 3))
+	_screen_body.text = "You ran yourself completely empty two days in a row, so today you rest. No work, no errands.\n\nThat's about €%d of pay you WON'T earn today. Dinner and sleep are cheaper than exhaustion!\n\n(Wellbeing +40)\n\n— Aunt Vera" % missed
 	_build_actions()
 	_show_card()
 
@@ -933,13 +936,15 @@ func _open_evening() -> void:
 	if GameState.rent_due_tonight():
 		lines += "\nRent    ↓  €%d  (due tonight)" % GameState.rent_amount()
 	lines += "\nWallet  =  €%d" % GameState.wallet
-	var overnight := int(GameState._wb().get("daily_drift", -5))
+	var wear := int(GameState._wb().get("day_wear", -10))
 	if GameState.groceries_today == "":
-		overnight -= int(GameState.econ.get("no_food_penalty", 10))
-		lines += "\n\nNo dinner tonight!  Energy %d overnight." % overnight
+		var hungry := int(GameState._wb().get("hungry_night", -15))
+		lines += "\n\nNo dinner — you won't sleep well!\nDay's wear %d, hungry night %d  →  %d energy" % [
+			wear, hungry, wear + hungry]
 	else:
-		overnight += int(GameState._grocery_tier(GameState.groceries_today).get("wellbeing", 0))
-		lines += "\n\nEnergy %+d overnight (%s dinner)." % [overnight, GameState.groceries_today]
+		var sleep_gain := int(GameState._grocery_tier(GameState.groceries_today).get("sleep", 12))
+		lines += "\n\nDay's wear %d, good sleep +%d (%s dinner)  →  %+d energy" % [
+			wear, sleep_gain, GameState.groceries_today, wear + sleep_gain]
 	if GameState.dream_id != "" and not GameState.dream_complete():
 		lines += "\nDream fund:  €%d / €%d" % [GameState.dream_saved, GameState.dream_cost()]
 	_screen_body.text = lines
@@ -1037,7 +1042,7 @@ func _build_actions() -> void:
 			if GameState.dream_id != "" and not GameState.dream_complete():
 				_screen_body.text += "\nDream:  %s  €%d / €%d" % [
 					GameState.dream_def().get("label", ""), GameState.dream_saved, GameState.dream_cost()]
-			var r := _action_button("Rest  ·  1 slot  ·  wellbeing up")
+			var r := _action_button("Rest  ·  1 slot  ·  +15 wellbeing")
 			r.disabled = GameState.slots_left <= 0
 			r.pressed.connect(_do_rest)
 			if GameState.dream_id != "" and not GameState.dream_complete():

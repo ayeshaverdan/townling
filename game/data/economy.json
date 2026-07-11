@@ -11,22 +11,21 @@
 			"id": "cheap",
 			"label": "Cheap",
 			"cost": 20,
-			"wellbeing": -5
+			"sleep": 8
 		},
 		{
 			"id": "normal",
 			"label": "Normal",
 			"cost": 30,
-			"wellbeing": 0
+			"sleep": 12
 		},
 		{
 			"id": "fancy",
 			"label": "Fancy",
 			"cost": 50,
-			"wellbeing": 5
+			"sleep": 16
 		}
 	],
-	"no_food_penalty": 10,
 	"rent_weekly": 60,
 	"savings_step": 10,
 	"dream_step": 25,
@@ -54,8 +53,9 @@
 	],
 	"wellbeing": {
 		"start": 70,
-		"daily_drift": -5,
-		"rest_gain": 20,
+		"day_wear": -10,
+		"hungry_night": -15,
+		"rest_gain": 15,
 		"pay_tiers": [
 			{
 				"min": 80,
