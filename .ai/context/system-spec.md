@@ -44,6 +44,8 @@ Days 2–7 unlock one system per day: gigs (day 2), classes (day 3, first Money 
 
 **A day = 3 energy slots.** Every meaningful action costs exactly one slot: a work shift, a gig, a class, a shopping trip, or rest. Micro-actions (checking the bank, reading a letter, decorating, admiring the diorama) are free.
 
+*Fun-test note (July 2026):* the prototype pays the shift instantly (day-1-script style) rather than at weekly payday, so the shift is capped at **one per day** (`courier_shift.per_day`) — otherwise 3×€28 daily trivially breaks the §13 balancing targets. The remaining slots belong to gigs (already capped 1–3/day), shopping, and rest — matching the salary-anchors/gigs-excite split of §6–§7. The full weekly-payday model arrives with professions.
+
 **Flow of one slot:** City diorama → tap a badged building → building sheet slides up → one action card (one decision, 1–3 buttons) → optional 30–60s mini-game → result card (+/- money animation, skill/XP ticks) → back to the diorama. Depth never exceeds one level below the city.
 
 **When slots hit 0**, dusk falls on the diorama; the only tap left is the Evening Summary → event card → day closes. If the player doesn't open the app, autopilot runs the day safely (attends work, pays bills, buys normal groceries, buys nothing else) and the return recap shows what happened.

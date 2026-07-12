@@ -25,6 +25,7 @@ var slots_left: int = 3
 var earned_today: int = 0
 var spent_today: int = 0
 var groceries_today: String = ""  # grocery tier id bought today ("" = none)
+var shifts_today: int = 0         # the job is once daily; gigs are the extra
 var wellbeing: int = 70           # 0-100 (spec §9); low wellbeing reduces pay
 var dream_id: String = ""         # the dream (design doc §8) — "" until chosen
 var dream_saved: int = 0          # coins put toward the dream so far
@@ -107,6 +108,7 @@ func init_new() -> void:
 	earned_today = 0
 	spent_today = 0
 	groceries_today = ""
+	shifts_today = 0
 	wellbeing = int(_wb().get("start", 70))
 	dream_id = ""
 	dream_saved = 0
@@ -132,10 +134,11 @@ func init_new() -> void:
 
 ## Work a Courier shift: one slot, instant pay + tip (spec §2 day-1 values).
 func work_shift() -> Dictionary:
-	if slots_left <= 0:
+	if slots_left <= 0 or not can_work_today():
 		return {}
 	var preview := shift_pay_preview()
 	var amount := int(preview.get("amount", 0))
+	shifts_today += 1
 	slots_left -= 1
 	wallet += amount
 	earned_today += amount
@@ -147,6 +150,12 @@ func work_shift() -> Dictionary:
 
 ## What a shift pays RIGHT NOW, given wellbeing (spec §9 pay tiers,
 ## v1.1 amendment: thriving/fine/tired/exhausted — legible cause and effect).
+## One shift a day: showing up is the job; hustle lives on the Notice Board.
+func can_work_today() -> bool:
+	var shift: Dictionary = econ.get("courier_shift", {})
+	return shifts_today < int(shift.get("per_day", 1))
+
+
 func shift_pay_preview() -> Dictionary:
 	var shift: Dictionary = econ.get("courier_shift", {})
 	var base := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
@@ -534,6 +543,7 @@ func end_day() -> void:
 	earned_today = 0
 	spent_today = 0
 	groceries_today = ""
+	shifts_today = 0
 	_after_change()
 
 
@@ -571,6 +581,7 @@ func save_game() -> void:
 		"wallet": wallet, "savings": savings, "day": day,
 		"slots_left": slots_left, "earned_today": earned_today,
 		"spent_today": spent_today, "groceries_today": groceries_today,
+		"shifts_today": shifts_today,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
 		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
 		"ledger": ledger, "tonight_event_id": tonight_event_id,
@@ -600,6 +611,7 @@ func load_game() -> bool:
 	earned_today = int(parsed.get("earned_today", 0))
 	spent_today = int(parsed.get("spent_today", 0))
 	groceries_today = str(parsed.get("groceries_today", ""))
+	shifts_today = int(parsed.get("shifts_today", 0))
 	wellbeing = int(parsed.get("wellbeing", 70))
 	dream_id = str(parsed.get("dream_id", ""))
 	dream_saved = int(parsed.get("dream_saved", 0))

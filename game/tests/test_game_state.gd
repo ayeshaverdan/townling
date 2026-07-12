@@ -30,6 +30,10 @@ func _init() -> void:
 	check(r.get("amount", 0) == 28, "shift pays €24+€4")
 	check(gs.wallet == 78 and gs.slots_left == 2, "wallet 78, 2 slots after shift")
 
+	check(not gs.can_work_today(), "the day's shift is used up")
+	check(gs.work_shift().is_empty(), "second shift same day blocked")
+	check(gs.wallet == 78, "wallet unchanged by blocked shift")
+
 	var g: Dictionary = gs.buy_groceries("normal")
 	check(g.get("cost", 0) == 30, "normal groceries €30")
 	check(gs.wallet == 48 and gs.slots_left == 1, "wallet 48, 1 slot")
@@ -43,6 +47,7 @@ func _init() -> void:
 	check(not gs.rent_due_tonight(), "no rent on day 1")
 	gs.end_day()
 	check(gs.day == 2 and gs.slots_left == 3, "day 2 fresh slots")
+	check(gs.can_work_today(), "new day, new shift")
 	check(gs.earned_today == 0 and gs.groceries_today == "", "day counters reset")
 	check(gs.wellbeing == 87, "overnight: wear -10, good sleep +12")
 

@@ -4,7 +4,8 @@
 	"slots_per_day": 3,
 	"courier_shift": {
 		"pay": 24,
-		"tip": 4
+		"tip": 4,
+		"per_day": 1
 	},
 	"groceries": [
 		{

@@ -1252,6 +1252,8 @@ func _build_actions() -> void:
 				var go := _action_button("Let's go!")
 				go.pressed.connect(_close_screen)
 		"Workplace":
+			if not GameState.can_work_today():
+				_screen_body.text += "\n\nToday's shift is done — nice work! Extra coins? Check the Notice Board for gigs."
 			var preview: Dictionary = GameState.shift_pay_preview()
 			match str(preview.get("tier", "")):
 				"thriving":
@@ -1261,7 +1263,7 @@ func _build_actions() -> void:
 				"exhausted":
 					_screen_body.text += "\n\nYou're exhausted! Rest and a good dinner will fix your pay."
 			var b := _action_button("Work a shift  ·  1 slot  ·  +€%d" % int(preview.get("amount", 0)))
-			b.disabled = GameState.slots_left <= 0
+			b.disabled = GameState.slots_left <= 0 or not GameState.can_work_today()
 			b.pressed.connect(_do_shift)
 		"Shop":
 			for tier in GameState.econ.get("groceries", []):
