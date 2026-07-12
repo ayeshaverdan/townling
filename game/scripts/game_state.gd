@@ -29,6 +29,8 @@ var shifts_today: int = 0         # the job is once daily; gigs are the extra
 var wellbeing: int = 70           # 0-100 (spec §9); low wellbeing reduces pay
 var dream_id: String = ""         # the dream (design doc §8) — "" until chosen
 var dream_saved: int = 0          # coins put toward the dream so far
+var dream_start_day: int = 1      # for the completion reflection (days it took)
+var completed_dreams: Array = []  # ids, in completion order — diorama monuments
 var zero_days: int = 0            # consecutive days ended at wellbeing 0
 var forced_rest_today: bool = false  # spec §9: mentor-ordered Rest Day
 var ledger: Array = []            # money activity: {d: day, t: label, a: +/-amount}
@@ -112,6 +114,8 @@ func init_new() -> void:
 	wellbeing = int(_wb().get("start", 70))
 	dream_id = ""
 	dream_saved = 0
+	dream_start_day = 1
+	completed_dreams = []
 	zero_days = 0
 	forced_rest_today = false
 	ledger = []
@@ -230,8 +234,39 @@ func select_dream(id: String) -> bool:
 		return false
 	dream_id = id
 	dream_saved = 0
+	dream_start_day = day
 	_after_change()
 	return true
+
+
+## Design doc §8: a completed dream stays on the diorama forever and a NEW
+## dream is chosen — the horizon always moves.
+func start_new_dream(id: String) -> bool:
+	if not dream_complete() or completed_dreams.has(id) or id == dream_id:
+		return false
+	if _dream_def(id).is_empty():
+		return false
+	completed_dreams.append(dream_id)
+	dream_id = id
+	dream_saved = 0
+	dream_start_day = day
+	_after_change()
+	return true
+
+
+## Dreams still available to pick (not completed, not current).
+func available_dreams() -> Array:
+	var out: Array = []
+	for d in econ.get("dreams", []):
+		var did: String = d.get("id", "")
+		if did == dream_id or completed_dreams.has(did):
+			continue
+		out.append(d)
+	return out
+
+
+func dream_days() -> int:
+	return maxi(1, day - dream_start_day)
 
 
 func dream_def() -> Dictionary:
@@ -583,6 +618,7 @@ func save_game() -> void:
 		"spent_today": spent_today, "groceries_today": groceries_today,
 		"shifts_today": shifts_today,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
+		"dream_start_day": dream_start_day, "completed_dreams": completed_dreams,
 		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
 		"ledger": ledger, "tonight_event_id": tonight_event_id,
 		"tonight_prepared_day": tonight_prepared_day,
@@ -615,6 +651,8 @@ func load_game() -> bool:
 	wellbeing = int(parsed.get("wellbeing", 70))
 	dream_id = str(parsed.get("dream_id", ""))
 	dream_saved = int(parsed.get("dream_saved", 0))
+	dream_start_day = int(parsed.get("dream_start_day", 1))
+	completed_dreams = parsed.get("completed_dreams", [])
 	zero_days = int(parsed.get("zero_days", 0))
 	forced_rest_today = bool(parsed.get("forced_rest_today", false))
 	ledger = parsed.get("ledger", [])

@@ -79,7 +79,8 @@ var _hud_chapter: Label
 var _lights_built := false
 
 var _dream_spot: Node3D
-var _dream_spot_key := ""  # rebuild ghost only when dream/progress bucket changes
+var _dream_group: Node3D
+var _dream_spot_key := ""  # rebuild monuments when the dream chain changes
 var _hud_heart_icon: TextureRect
 var _home_badge: Label3D
 var _blink_time := 0.0
@@ -163,7 +164,11 @@ func _capture_and_quit() -> void:
 	elif "--dream" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
-		GameState.select_dream("treehouse")
+		GameState.select_dream("puppy")
+		GameState.wallet = 999
+		while not GameState.dream_complete():
+			GameState.fund_dream()
+		GameState.start_new_dream("treehouse")
 		GameState.wallet = 400
 		for i in 12:
 			GameState.fund_dream()
@@ -312,8 +317,13 @@ func _build_town() -> void:
 		Vector2i(0, 6), Vector2i(2, 6), Vector2i(4, 6),
 		Vector2i(5, 6),
 	]
+	# Corners occupied by dream monuments (past and present) get no trees.
+	var dream_slots: int = mini(GameState.completed_dreams.size() + 1, DREAM_CELLS.size())
+	var reserved: Array = DREAM_CELLS.slice(0, dream_slots)
 	var tall := true
 	for cell in tree_cells:
+		if reserved.has(cell):
+			continue
 		_spawn("grass-trees-tall" if tall else "grass-trees", cell)
 		tall = not tall
 
@@ -966,12 +976,13 @@ func _update_string_lights() -> void:
 
 # --- The dream on the diorama (design doc §8: dotted outline that fills) -----
 
-const DREAM_CELL := Vector2i(6, 6)
+const DREAM_CELLS := [Vector2i(6, 6), Vector2i(6, 0), Vector2i(0, 6)]
 
-## Rebuild the ghost when the dream or its progress bucket changes. The dream
-## starts as a pale ghost and solidifies as it is funded; complete = gold.
+## Rebuild the monuments when the dream chain or progress bucket changes.
+## Completed dreams stand gold forever; the active one is a ghost filling in.
 func _update_dream_spot() -> void:
-	var key := "%s:%d:%s" % [
+	var key := "%s|%s:%d:%s" % [
+		",".join(PackedStringArray(GameState.completed_dreams)),
 		GameState.dream_id, int(GameState.dream_progress() * 10.0),
 		str(GameState.dream_complete())]
 	if key == _dream_spot_key:
@@ -980,13 +991,28 @@ func _update_dream_spot() -> void:
 	if _dream_spot != null:
 		_dream_spot.queue_free()
 		_dream_spot = null
-	if GameState.dream_id == "":
+	if GameState.dream_id == "" and GameState.completed_dreams.is_empty():
 		return
 
 	_dream_spot = Node3D.new()
-	_dream_spot.position = Vector3(DREAM_CELL.x * TILE, GROUND_Y, DREAM_CELL.y * TILE)
 	world.add_child(_dream_spot)
 
+	# Past dreams: gold monuments on their corners.
+	for i in GameState.completed_dreams.size():
+		if i >= DREAM_CELLS.size():
+			break
+		var gold := StandardMaterial3D.new()
+		gold.albedo_color = Color(0.95, 0.83, 0.5, 1.0)
+		gold.roughness = 0.9
+		gold.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		_build_dream_shape(str(GameState.completed_dreams[i]),
+			Vector3(DREAM_CELLS[i].x * TILE, GROUND_Y, DREAM_CELLS[i].y * TILE), gold, "")
+
+	# The active dream: ghost -> solid -> gold on its own corner.
+	if GameState.dream_id == "":
+		return
+	var slot: int = mini(GameState.completed_dreams.size(), DREAM_CELLS.size() - 1)
+	var origin := Vector3(DREAM_CELLS[slot].x * TILE, GROUND_Y, DREAM_CELLS[slot].y * TILE)
 	var mat := StandardMaterial3D.new()
 	if GameState.dream_complete():
 		mat.albedo_color = Color(0.95, 0.83, 0.5, 1.0)   # solid gold — it's real!
@@ -995,8 +1021,18 @@ func _update_dream_spot() -> void:
 		mat.albedo_color = Color(1, 1, 1, 0.22 + 0.55 * GameState.dream_progress())
 	mat.roughness = 0.9
 	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	var tag_text := "DREAM COME TRUE!" if GameState.dream_complete() else "MY DREAM"
+	_build_dream_shape(GameState.dream_id, origin, mat, tag_text)
 
-	match GameState.dream_id:
+
+## The little low-poly silhouette for a dream id, built at `origin`.
+func _build_dream_shape(id: String, origin: Vector3, mat: Material, tag_text: String) -> void:
+	var group := Node3D.new()
+	group.position = origin
+	_dream_spot.add_child(group)
+	var prev := _dream_group
+	_dream_group = group
+	match id:
 		"treehouse":
 			_dream_mesh(_box_mesh(Vector3(0.12, 0.5, 0.12)), Vector3(0, 0.25, 0), mat)
 			_dream_mesh(_box_mesh(Vector3(0.44, 0.05, 0.44)), Vector3(0, 0.52, 0), mat)
@@ -1013,17 +1049,19 @@ func _update_dream_spot() -> void:
 			_dream_mesh(_prism_mesh(Vector3(0.3, 0.22, 0.36)), Vector3(-0.18, 0.11, 0), mat, 90.0)
 			_dream_mesh(_prism_mesh(Vector3(0.3, 0.22, 0.36)), Vector3(0.18, 0.11, 0), mat, -90.0)
 
-	var tag := Label3D.new()
-	tag.text = "MY DREAM" if not GameState.dream_complete() else "DREAM COME TRUE!"
-	tag.font = _font
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.pixel_size = 0.003
-	tag.font_size = 30
-	tag.modulate = Color("7a5410")
-	tag.outline_size = 8
-	tag.outline_modulate = Color(1, 1, 1, 0.9)
-	tag.position = Vector3(0, 1.15, 0)
-	_dream_spot.add_child(tag)
+	if tag_text != "":
+		var tag := Label3D.new()
+		tag.text = tag_text
+		tag.font = _font
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.pixel_size = 0.003
+		tag.font_size = 30
+		tag.modulate = Color("7a5410")
+		tag.outline_size = 8
+		tag.outline_modulate = Color(1, 1, 1, 0.9)
+		tag.position = Vector3(0, 1.15, 0)
+		group.add_child(tag)
+	_dream_group = prev if prev != null else group
 
 
 func _dream_mesh(mesh: Mesh, pos: Vector3, mat: Material, rot_deg: float = 0.0) -> void:
@@ -1032,7 +1070,7 @@ func _dream_mesh(mesh: Mesh, pos: Vector3, mat: Material, rot_deg: float = 0.0) 
 	mi.material_override = mat
 	mi.position = pos
 	mi.rotation.y = deg_to_rad(rot_deg)
-	_dream_spot.add_child(mi)
+	_dream_group.add_child(mi)
 
 
 func _box_mesh(size: Vector3) -> BoxMesh:
@@ -1177,11 +1215,11 @@ func _open_evening() -> void:
 	var wear := int(GameState._wb().get("day_wear", -10))
 	if GameState.groceries_today == "":
 		var hungry := int(GameState._wb().get("hungry_night", -15))
-		lines += "\n\nNo dinner — you won't sleep well!\nDay's wear %d, hungry night %d  →  %d energy" % [
+		lines += "\n\nOvernight sleep: no dinner — you won't sleep well!\nDay's wear %d, hungry night %d  →  %d energy" % [
 			wear, hungry, wear + hungry]
 	else:
 		var sleep_gain := int(GameState._grocery_tier(GameState.groceries_today).get("sleep", 12))
-		lines += "\n\nDay's wear %d, good sleep +%d (%s dinner)  →  %+d energy" % [
+		lines += "\n\nOvernight sleep: day's wear %d, dinner restores +%d (%s)  →  %+d energy" % [
 			wear, sleep_gain, GameState.groceries_today, wear + sleep_gain]
 	if GameState.dream_id != "" and not GameState.dream_complete():
 		lines += "\nDream fund:  €%d / €%d" % [GameState.dream_saved, GameState.dream_cost()]
@@ -1243,8 +1281,8 @@ func _build_actions() -> void:
 		child.queue_free()
 	match _current_screen:
 		"Dream":
-			if GameState.dream_id == "":
-				for d in GameState.econ.get("dreams", []):
+			if GameState.dream_id == "" or GameState.dream_complete():
+				for d in GameState.available_dreams():
 					var db := _action_button("%s  ·  €%d" % [d.get("label", "?"), int(d.get("cost", 0))])
 					var did: String = d.get("id", "")
 					db.pressed.connect(func() -> void: _pick_dream(did))
@@ -1284,10 +1322,11 @@ func _build_actions() -> void:
 				if GameState.rent_due_tonight() else \
 				"Rent €%d due in %d day%s." % [GameState.rent_amount(), days_left, "" if days_left == 1 else "s"]
 			_screen_body.text += "\n\n" + rent_line
+			_screen_body.text += "\nNaps give energy now — tonight's sleep depends on dinner."
 			if GameState.dream_id != "" and not GameState.dream_complete():
 				_screen_body.text += "\nDream:  %s  €%d / €%d" % [
 					GameState.dream_def().get("label", ""), GameState.dream_saved, GameState.dream_cost()]
-			var r := _action_button("Rest  ·  1 slot  ·  +15 wellbeing")
+			var r := _action_button("Nap & recharge  ·  1 slot  ·  +15 energy NOW")
 			r.disabled = GameState.slots_left <= 0
 			r.pressed.connect(_do_rest)
 			if GameState.dream_id != "" and not GameState.dream_complete():
@@ -1295,6 +1334,9 @@ func _build_actions() -> void:
 				var fd := _action_button("Put €%d toward your dream" % step)
 				fd.disabled = GameState.wallet <= 0
 				fd.pressed.connect(_do_fund_dream)
+			elif GameState.dream_complete() and GameState.available_dreams().size() > 0:
+				var nd := _action_button("Choose my NEXT dream!")
+				nd.pressed.connect(_open_dream_picker)
 		"Bank":
 			_screen_body.text += "\n\nSavings jar:  €%d" % GameState.savings
 			if GameState.ledger.size() > 0:
@@ -1318,7 +1360,7 @@ func _build_actions() -> void:
 				var evb := _action_button("Something's happening outside…")
 				evb.pressed.connect(_open_event)
 			else:
-				var s := _action_button("Sleep  💤")
+				var s := _action_button("Sleep  💤  ·  start day %d" % (GameState.day + 1))
 				s.pressed.connect(_do_sleep)
 		"RestDay":
 			var ok := _action_button("Okay, I'll rest…")
@@ -1385,7 +1427,9 @@ func _action_button(text: String) -> Button:
 
 
 func _pick_dream(id: String) -> void:
-	if not GameState.select_dream(id):
+	var ok := GameState.start_new_dream(id) if GameState.dream_complete() \
+		else GameState.select_dream(id)
+	if not ok:
 		return
 	Sfx.play(SND_OPEN, -8.0)
 	_screen_body.text = "A %s! Wonderful choice.\n\nLook for the ghostly outline in town — every coin you put toward it makes it more real." % GameState.dream_def().get("label", "")
@@ -1399,7 +1443,9 @@ func _do_fund_dream() -> void:
 	Sfx.play(SND_OPEN, -10.0)
 	_money_fx(-int(r.get("added", 0)))
 	if r.get("completed", false):
-		_screen_body.text = "YOU DID IT! Your %s is real!\n\nGo look at it in town — you earned every coin of it." % GameState.dream_def().get("label", "")
+		_float_icons("res://assets/ui/star.png", 7)
+		_screen_body.text = "YOU DID IT! Your %s is real — go look at it in town!\n\nYou saved €%d in %d days, €25 at a time. Small choices, big things.\n\n— Aunt Vera" % [
+			GameState.dream_def().get("label", ""), GameState.dream_cost(), GameState.dream_days()]
 	else:
 		_screen_body.text = "€%d closer to your %s!\n\nDream fund:  €%d / €%d" % [
 			r["added"], GameState.dream_def().get("label", ""),
@@ -1440,7 +1486,7 @@ func _do_rest() -> void:
 	if not GameState.rest():
 		return
 	_float_icons("res://assets/ui/heart.png", 4)
-	_screen_body.text = "You put your feet up and recharge. Wellbeing up!"
+	_screen_body.text = "A lovely nap: +15 energy right now.\n\nTonight's SLEEP is different — how well you sleep depends on dinner!"
 	_build_actions()
 
 
@@ -1665,7 +1711,7 @@ func _refresh_hud() -> void:
 		_hud_dream_label.text = "pick a dream!"
 		_hud_dream_bar.value = 0.0
 	elif GameState.dream_complete():
-		_hud_dream_label.text = "%s  ✔" % GameState.dream_def().get("label", "")
+		_hud_dream_label.text = "%s ✔ — new dream?" % GameState.dream_def().get("label", "")
 		_hud_dream_bar.value = 100.0
 	else:
 		_hud_dream_label.text = "€%d/€%d" % [GameState.dream_saved, GameState.dream_cost()]

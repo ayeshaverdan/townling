@@ -111,6 +111,13 @@ func _init() -> void:
 	check(gs.fund_dream().is_empty(), "no funding past completion")
 	check(gs.dream_progress() == 1.0, "progress 100%")
 
+	# The horizon moves: pick a NEW dream after completing one (design §8).
+	check(not gs.start_new_dream("puppy"), "cannot re-pick the completed dream")
+	check(gs.start_new_dream("treehouse"), "new dream chosen")
+	check(gs.completed_dreams.has("puppy"), "old dream kept as a monument")
+	check(gs.dream_saved == 0 and gs.dream_cost() == 600, "fresh ledger for the new dream")
+	check(gs.available_dreams().size() == 2, "two dreams left in the catalog")
+
 	# Forced Rest Day (spec §9): two days ended at 0 -> mentor floor.
 	gs.zero_days = 0  # isolate from the day-7 zero-day above
 	gs.wellbeing = 0
