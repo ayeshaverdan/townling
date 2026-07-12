@@ -151,14 +151,15 @@ func _capture_and_quit() -> void:
 		camera.position = focus2 + dir2 * 12.0
 		camera.look_at(focus2, Vector3.UP)
 	elif "--ui" in OS.get_cmdline_args():
-		# Exercise gameplay for the preview: one shift, then the Workplace screen.
+		# Exercise gameplay for the preview: open Workplace and work a shift
+		# so the coin flight is captured mid-air.
 		GameState.autosave = false
 		GameState.init_new()
-		GameState.work_shift()
 		for i in _picks.size():
 			if _picks[i]["name"] == "Workplace":
 				_open_screen(i)
 				break
+		_do_shift()
 	elif "--dream" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -284,7 +285,7 @@ func _build_town() -> void:
 			Vector3(cell.x * TILE - 0.5, 0.0, cell.y * TILE - 0.5),
 			Vector3(TILE, height, TILE)
 		)
-		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box})
+		_picks.append({"name": lm["name"], "blurb": lm["blurb"], "box": box, "node": inst})
 
 		# Per-landmark detailing.
 		var lot := Vector3(cell.x * TILE, 0.0, cell.y * TILE)
@@ -572,12 +573,103 @@ func _decorate_notice_board(origin: Vector3) -> void:
 		root.add_child(note)
 
 
+# --- Feedback FX (design doc §13: money animates into/out of the wallet) -----
+
+## Fly a batch of coins between the card and the wallet. delta>0 = earning
+## (card -> wallet), delta<0 = spending (wallet -> card).
+func _money_fx(delta: int) -> void:
+	if delta == 0 or _hud_wallet == null:
+		return
+	var wallet_pos: Vector2 = _hud_wallet.get_global_position() + _hud_wallet.size * 0.5
+	var card_pos: Vector2 = _card.get_global_position() + Vector2(_card.size.x * 0.5, 160.0)
+	var from := card_pos if delta > 0 else wallet_pos
+	var to := wallet_pos if delta > 0 else card_pos
+	var count := clampi(absi(delta) / 8 + 2, 3, 9)
+	Sfx.play("assets/kenney/sounds/toggle.ogg", -14.0)
+	for i in count:
+		_fly_coin(from, to, i * 0.05)
+	var pt := create_tween()
+	pt.tween_interval(0.5 + count * 0.05)
+	pt.tween_callback(_pulse_wallet)
+
+
+func _fly_coin(from: Vector2, to: Vector2, delay: float) -> void:
+	var coin := TextureRect.new()
+	coin.texture = load("res://assets/ui/coin.png")
+	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	coin.size = Vector2(26, 26)
+	coin.position = from - Vector2(13, 13) + Vector2(randf_range(-16, 16), randf_range(-10, 10))
+	coin.modulate.a = 0.0
+	($UI as CanvasLayer).add_child(coin)
+	var start: Vector2 = coin.position + Vector2(13, 13)
+	var mid: Vector2 = (start + to) * 0.5 + Vector2(randf_range(-30, 30), -70.0 - randf_range(0, 40))
+	var tw := coin.create_tween()
+	tw.tween_interval(delay)
+	tw.tween_callback(func() -> void: coin.modulate.a = 1.0)
+	tw.tween_method(func(t: float) -> void:
+		var p1 := start.lerp(mid, t)
+		var p2 := mid.lerp(to, t)
+		coin.position = p1.lerp(p2, t) - Vector2(13, 13)
+	, 0.0, 1.0, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(coin.queue_free)
+
+
+func _pulse_wallet() -> void:
+	if _hud_wallet == null:
+		return
+	_hud_wallet.pivot_offset = _hud_wallet.size * 0.5
+	var tw := _hud_wallet.create_tween()
+	tw.tween_property(_hud_wallet, "scale", Vector2(1.28, 1.28), 0.09) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_hud_wallet, "scale", Vector2.ONE, 0.16) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## Gentle upward-floating icons (hearts after rest, etc.).
+func _float_icons(tex_path: String, count: int) -> void:
+	var origin: Vector2 = _card.get_global_position() + Vector2(_card.size.x * 0.5, 200.0)
+	for i in count:
+		var icon := TextureRect.new()
+		icon.texture = load(tex_path)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size = Vector2(30, 30)
+		icon.position = origin + Vector2(randf_range(-70, 70), randf_range(-10, 10))
+		($UI as CanvasLayer).add_child(icon)
+		var tw := icon.create_tween()
+		tw.tween_interval(i * 0.08)
+		tw.set_parallel(true)
+		tw.tween_property(icon, "position:y", icon.position.y - randf_range(70, 110), 0.7) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(icon, "modulate:a", 0.0, 0.7).set_ease(Tween.EASE_IN)
+		tw.set_parallel(false)
+		tw.tween_callback(icon.queue_free)
+
+
 # --- Living city -------------------------------------------------------------
 
 func _add_car(model: String, x: float, lane_z: float, dir: float, speed: float) -> void:
 	var car := _spawn_free(model, Vector3(x, 0.05, lane_z), 90.0 * dir, 0.18)
 	if car != null:
 		_cars.append({"node": car, "speed": speed, "dir": dir})
+
+
+## Find a re-entry x that isn't on top of another car in the same lane.
+func _wrap_spot(entry_x: float, me: Dictionary, push_dir: float) -> float:
+	var x := entry_x
+	for _attempt in 4:
+		var clear := true
+		for o in _cars:
+			if o == me or o["dir"] != me["dir"]:
+				continue
+			if absf(o["node"].position.x - x) < 0.7:
+				clear = false
+				break
+		if clear:
+			return x
+		x += push_dir * 0.8
+	return x
 
 
 func _add_clouds() -> void:
@@ -637,14 +729,23 @@ func _sky_disc(mat: StandardMaterial3D, radius: float) -> MeshInstance3D:
 
 
 func _update_city_life(delta: float) -> void:
-	# Cars loop along the road.
+	# Cars loop along the road — and never drive through the one ahead:
+	# a faster car eases to the leader's speed inside the follow gap.
 	for c in _cars:
 		var node: Node3D = c["node"]
-		node.position.x += c["speed"] * c["dir"] * delta
+		var spd: float = c["speed"]
+		for o in _cars:
+			if o == c or o["dir"] != c["dir"]:
+				continue
+			var ahead: float = (o["node"].position.x - node.position.x) * c["dir"]
+			if ahead > 0.001 and ahead < 0.6:
+				spd = minf(spd, float(o["speed"]) * 0.95)
+		node.position.x += spd * c["dir"] * delta
 		if c["dir"] > 0.0 and node.position.x > 7.6:
-			node.position.x = -1.6
+			node.position.x = _wrap_spot(-1.6, c, -1.0)
 		elif c["dir"] < 0.0 and node.position.x < -1.6:
-			node.position.x = 7.6
+			node.position.x = _wrap_spot(7.6, c, 1.0)
+	# (helper keeps re-entering cars from stacking on one already there)
 	# Clouds drift and wrap.
 	for cl in _clouds:
 		var cn: Node3D = cl["node"]
@@ -731,6 +832,7 @@ func _do_event_choice(choice_id: String) -> void:
 	if outcome.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(int(outcome.get("wallet", 0)))
 	var lines: Array[String] = []
 	var dw := int(outcome.get("wallet", 0))
 	var dwb := int(outcome.get("wellbeing", 0))
@@ -753,6 +855,7 @@ func _do_gig(id: String) -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(int(r.get("pay", 0)))
 	_screen_body.text = "%s done!\n\n+€%d straight into your wallet." % [r["label"], r["pay"]]
 	_build_actions()
 
@@ -771,6 +874,7 @@ func _do_quiz_answer(idx: int) -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(int(r.get("pay", 0)))
 	_current_screen = "Notice Board"
 	_screen_title.text = "Bank quiz night"
 	if r.get("correct", false):
@@ -797,6 +901,9 @@ func _open_chapter_result() -> void:
 	if r.is_empty():
 		return
 	_current_screen = "ChapterResult"
+	if r.get("success", false):
+		_money_fx(-int(r.get("ticket", 0)))
+		_float_icons("res://assets/ui/star.png", 6)
 	if r.get("success", false):
 		_screen_title.text = "FESTIVAL NIGHT! 🎉"
 		_screen_body.text = "You saved €%d in time! Music, lights, and the best evening Townling has ever seen.\n\nThe string lights by the fountain are yours to keep." % r["ticket"]
@@ -1038,6 +1145,15 @@ func _ray_aabb(ro: Vector3, rd: Vector3, box: AABB) -> float:
 
 func _open_screen(index: int) -> void:
 	var pick = _picks[index]
+	# A friendly pop on the tapped building before its screen slides in.
+	var bnode: Node3D = pick.get("node")
+	if bnode != null:
+		var base: Vector3 = bnode.scale
+		var bt := bnode.create_tween()
+		bt.tween_property(bnode, "scale", base * 1.1, 0.09) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		bt.tween_property(bnode, "scale", base, 0.14) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_current_screen = pick["name"]
 	_screen_title.text = pick["name"]
 	_screen_body.text = pick["blurb"]
@@ -1081,9 +1197,14 @@ func _show_card() -> void:
 	_size_card()
 	var vp := get_viewport().get_visible_rect().size
 	_card.position = Vector2(16.0, vp.y)
+	_screen.modulate.a = 0.0
+	var fade := _screen.create_tween()
+	fade.tween_property(_screen, "modulate:a", 1.0, 0.16)
 	var tween := create_tween()
-	tween.tween_property(_card, "position:y", CARD_TOP, 0.25) \
+	tween.tween_property(_card, "position:y", CARD_TOP + 14.0, 0.22) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_card, "position:y", CARD_TOP, 0.12) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 
 func _close_screen() -> void:
@@ -1274,6 +1395,7 @@ func _do_fund_dream() -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(-int(r.get("added", 0)))
 	if r.get("completed", false):
 		_screen_body.text = "YOU DID IT! Your %s is real!\n\nGo look at it in town — you earned every coin of it." % GameState.dream_def().get("label", "")
 	else:
@@ -1288,6 +1410,7 @@ func _do_shift() -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(int(r.get("amount", 0)))
 	match str(r.get("tier", "fine")):
 		"thriving":
 			_screen_body.text = "Deliveries done with a spring in your step!\n\n+€%d — including a €%d good-mood tip!" % [r["amount"], r["bonus"]]
@@ -1305,6 +1428,7 @@ func _do_groceries(tier_id: String) -> void:
 	if r.is_empty():
 		return
 	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(-int(r.get("cost", 0)))
 	_screen_body.text = "%s groceries — the fridge is stocked.\n\n−€%d from your wallet." % [
 		r["label"], r["cost"]]
 	_build_actions()
@@ -1313,6 +1437,7 @@ func _do_groceries(tier_id: String) -> void:
 func _do_rest() -> void:
 	if not GameState.rest():
 		return
+	_float_icons("res://assets/ui/heart.png", 4)
 	_screen_body.text = "You put your feet up and recharge. Wellbeing up!"
 	_build_actions()
 
@@ -1322,6 +1447,7 @@ func _do_bank(amount: int, into_savings: bool) -> void:
 	if not ok:
 		return
 	Sfx.play(SND_OPEN, -12.0)
+	_money_fx(-amount if into_savings else amount)
 	_screen_body.text = "Your coins are safe in the jar." if into_savings \
 		else "Coins back in your pocket."
 	_build_actions()
