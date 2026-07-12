@@ -86,6 +86,15 @@ var _home_badge: Label3D
 var _blink_time := 0.0
 
 # Living city: drifting clouds, driving cars, and a day arc tied to slots.
+# Snow-globe camera: orbit + zoom around the fixed diorama (never pans —
+# design doc §5: navigation is not the game).
+var _cam_yaw := 0.7853981634          # 45° — the home view
+var _cam_dist := 30.0
+var _cam_yaw_target := 0.7853981634
+var _cam_dist_target := 30.0
+var _press_pos := Vector2.INF
+var _orbit_drag := false
+
 var _clouds: Array = []      # [{node, speed}]
 var _cars: Array = []        # [{node, speed, dir}]
 var _sun_disc: MeshInstance3D
@@ -198,6 +207,13 @@ func _capture_and_quit() -> void:
 		GameState.schedule_event("fridge_breaks", 3)
 		GameState.prepare_tonight()
 		_open_event()
+	elif "--yaw" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("treehouse")
+		_cam_yaw = deg_to_rad(160.0)
+		_cam_yaw_target = _cam_yaw
+		_apply_camera()
 	elif "--dusk" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -1117,16 +1133,25 @@ func _add_label_at(pos: Vector3, text: String) -> void:
 
 
 func _setup_camera() -> void:
-	# Kenney-style camera: narrow-fov perspective (fov 20 at distance ~30)
-	# instead of pure orthographic — reads isometric but keeps a whisper of
-	# depth, matching the kit's own scene.
-	var target := Vector3((COLS - 1) * TILE * 0.5, 0.8, (ROWS - 1) * TILE * 0.5)
+	# Kenney-style camera: narrow-fov perspective (fov 20 at distance ~30),
+	# orbiting the diorama centre snow-globe style (yaw + zoom only).
 	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.fov = 20.0
-	var dir := Vector3(12.0, 13.0, 12.0).normalized()
-	camera.position = target + dir * 30.0
-	camera.look_at(target, Vector3.UP)
+	_apply_camera()
+
+
+func _cam_target_point() -> Vector3:
+	return Vector3((COLS - 1) * TILE * 0.5, 0.8, (ROWS - 1) * TILE * 0.5)
+
+
+func _apply_camera() -> void:
+	# Elevation fixed at the isometric angle; yaw and distance are the dials.
+	var t := _cam_target_point()
+	var h := 0.7928 * _cam_dist
+	var v := 0.6073 * _cam_dist
+	camera.position = t + Vector3(cos(_cam_yaw) * h, v, sin(_cam_yaw) * h)
+	camera.look_at(t, Vector3.UP)
 
 
 # --- Interaction: tap a building -> open its screen -------------------------
@@ -1134,14 +1159,61 @@ func _setup_camera() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _screen_open:
 		return
-	var pos := Vector2.INF
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		pos = event.position
-	elif event is InputEventScreenTouch and event.pressed:
-		pos = event.position
-	if pos == Vector2.INF:
+	# Zoom (wheel / pinch), bounded so the town always fills the view.
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_cam_dist_target = clampf(_cam_dist_target - 2.0, 20.0, 42.0)
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_cam_dist_target = clampf(_cam_dist_target + 2.0, 20.0, 42.0)
+			return
+	if event is InputEventMagnifyGesture:
+		_cam_dist_target = clampf(_cam_dist_target / event.factor, 20.0, 42.0)
+		return
+	# Drag = orbit; a still press-release = tap (building pick).
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if event.double_click:
+				_cam_yaw_target = 0.7853981634
+				_cam_dist_target = 30.0
+				_press_pos = Vector2.INF
+				return
+			_press_pos = event.position
+			_orbit_drag = false
+			return
+		else:
+			var was_drag := _orbit_drag
+			var press := _press_pos
+			_press_pos = Vector2.INF
+			_orbit_drag = false
+			if was_drag or press == Vector2.INF:
+				return
+			_pick_at(event.position)
+			return
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_press_pos = event.position
+			_orbit_drag = false
+		else:
+			var was_drag2 := _orbit_drag
+			var press2 := _press_pos
+			_press_pos = Vector2.INF
+			_orbit_drag = false
+			if not was_drag2 and press2 != Vector2.INF:
+				_pick_at(event.position)
+		return
+	if (event is InputEventMouseMotion and _press_pos != Vector2.INF) \
+			or event is InputEventScreenDrag:
+		if _press_pos == Vector2.INF:
+			return
+		if not _orbit_drag and event.position.distance_to(_press_pos) > 14.0:
+			_orbit_drag = true
+		if _orbit_drag:
+			_cam_yaw_target += event.relative.x * 0.006
 		return
 
+
+func _pick_at(pos: Vector2) -> void:
 	var origin := camera.project_ray_origin(pos)
 	var dir := camera.project_ray_normal(pos)
 	var best := -1
@@ -1680,6 +1752,11 @@ func _hud_bar(fill: Color, size: Vector2) -> ProgressBar:
 
 ## Exhausted state: the heart pulses for attention (visible consequence cue).
 func _process(delta: float) -> void:
+	var w := minf(delta * 10.0, 1.0)
+	if absf(_cam_yaw - _cam_yaw_target) > 0.0005 or absf(_cam_dist - _cam_dist_target) > 0.01:
+		_cam_yaw = lerp_angle(_cam_yaw, _cam_yaw_target, w)
+		_cam_dist = lerpf(_cam_dist, _cam_dist_target, w)
+		_apply_camera()
 	_update_city_life(delta)
 	if _hud_heart_icon == null:
 		return

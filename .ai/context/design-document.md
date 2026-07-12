@@ -73,7 +73,7 @@ One simulation engine, three presentation layers. The economic model underneath 
 
 ### The city diorama hub
 
-The entire game state lives on one fixed, charming, single-screen town — a diorama, deliberately **not** a scrollable open map. *(Rendered as low-poly 3D on a fixed isometric camera — see the visual-direction update in §18.)* Navigation is not the game; money decisions are. Each building is a large tappable landmark:
+The entire game state lives on one fixed, charming, single-screen town — a diorama, deliberately **not** a scrollable open map. *(Rendered as low-poly 3D on a fixed isometric camera — see the visual-direction update in §18. July 2026 clarification: the diorama may be **orbited and zoomed in place, snow-globe style** — the whole town always stays on one screen; it never scrolls or pans, and navigation remains not-the-game.)* Navigation is not the game; money decisions are. Each building is a large tappable landmark:
 
 **Home** (lifestyle, decorating, rest) · **Workplace** (shifts, promotions) · **Bank** (accounts, savings, later loans and investments) · **School/Library** (skill classes) · **Shop** (groceries, purchases, lifestyle) · **Notice Board** (gigs and missions) · and in Band C, an **investment floor** at the bank and a **business district**.
 
