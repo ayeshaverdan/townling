@@ -76,6 +76,11 @@ var _hud_heart: ProgressBar
 var _hud_dream_label: Label
 var _hud_dream_bar: ProgressBar
 var _hud_chapter: Label
+var _hud_mood: TextureRect
+var _card_mood: TextureRect
+var _card_mood_label: Label
+var _card_heart: ProgressBar
+var _hud_mood_key := ""
 var _lights_built := false
 var _bike_built := false
 
@@ -1145,6 +1150,19 @@ func _after_chapter_result() -> void:
 ## Aunt Vera asks a question before clearly self-harmful choices — question-
 ## form, never blocking, never a lecture (design doc §5 mentor voice; fun-test
 ## amendment: she may ASK before, the lesson still comes after).
+## Aunt Vera's one-liner for the evening ritual — her daily presence.
+func _vera_evening_line() -> String:
+	if GameState.day % 7 == 6:
+		return "“Rent is due tomorrow, sweetheart — €%d ready?”  — Aunt Vera" % GameState.rent_amount()
+	if GameState.groceries_today == "":
+		return "“An empty tummy makes for a hard morning…”  — Aunt Vera"
+	if GameState.earned_today > GameState.spent_today:
+		return "“Lovely day's work. Sleep proud.”  — Aunt Vera"
+	if GameState.spent_today > GameState.earned_today:
+		return "“A spendy day, hm? Tomorrow is a fresh one.”  — Aunt Vera"
+	return "“Sleep well, little Townling.”  — Aunt Vera"
+
+
 func _vera_confirm(message: String, on_confirm: Callable) -> void:
 	_vera_back = _current_screen
 	_vera_next = on_confirm
@@ -1672,6 +1690,7 @@ func _open_evening() -> void:
 			wear, sleep_gain, GameState.groceries_today, wear + sleep_gain]
 	if GameState.dream_id != "" and not GameState.dream_complete():
 		lines += "\nDream fund:  €%d / €%d" % [GameState.dream_saved, GameState.dream_cost()]
+	lines += "\n\n" + _vera_evening_line()
 	_screen_body.text = lines
 	_build_actions()
 	_show_card()
@@ -1895,7 +1914,7 @@ func _build_actions() -> void:
 			_screen_body.text += "\n\n(coming soon)"
 	# Aunt Vera's portrait appears on every card she speaks through.
 	if _portrait != null:
-		_portrait.visible = _current_screen in ["Vera", "RestDay", "Chapter", "ChapterResult"] \
+		_portrait.visible = _current_screen in ["Vera", "RestDay", "Chapter", "ChapterResult", "Evening"] \
 			or (_current_screen == "Dream" and GameState.dream_complete())
 	# Must-answer screens have no escape hatch (dream pick, live event).
 	if _close_btn != null:
@@ -2113,7 +2132,30 @@ func _setup_ui() -> void:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(spacer)
 
+	# Status footer: the kid sees the effect on THEMSELVES while the card
+	# hides the town (mood face + feeling + heart bar, live).
+	var status := HBoxContainer.new()
+	status.add_theme_constant_override("separation", 10)
+	col.add_child(status)
+	_card_mood = TextureRect.new()
+	_card_mood.texture = load("res://assets/ui/mood_fine.png")
+	_card_mood.custom_minimum_size = Vector2(44, 44)
+	_card_mood.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_card_mood.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	status.add_child(_card_mood)
+	_card_mood_label = Label.new()
+	_card_mood_label.add_theme_color_override("font_color", Color("7a5410"))
+	_card_mood_label.add_theme_font_size_override("font_size", 24)
+	_card_mood_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status.add_child(_card_mood_label)
+	_card_heart = _hud_bar(Color("e24b4a"), Vector2(110, 14))
+	status.add_child(_card_heart)
+
 	_size_card()
+	# The visible rect is not final at boot (stretch settles a frame later):
+	# track it via the signal and re-sync once deferred.
+	get_viewport().size_changed.connect(_on_viewport_resized)
+	_on_viewport_resized.call_deferred()
 
 	# --- HUD: day, wallet, energy slots (top-right; the wallet is the single
 	# always-visible number, design doc §13) ---------------------------------
@@ -2160,6 +2202,8 @@ func _setup_ui() -> void:
 	heart_row.alignment = BoxContainer.ALIGNMENT_END
 	heart_row.add_theme_constant_override("separation", 6)
 	hud.add_child(heart_row)
+	_hud_mood = _hud_icon("res://assets/ui/mood_fine.png", 34)
+	heart_row.add_child(_hud_mood)
 	_hud_heart_icon = _hud_icon("res://assets/ui/heart.png", 28)
 	heart_row.add_child(_hud_heart_icon)
 	_hud_heart = _hud_bar(Color("e24b4a"), Vector2(110, 14))
@@ -2262,6 +2306,38 @@ func _refresh_hud() -> void:
 		_hud_chapter.text = ""
 	else:
 		_hud_chapter.text = ""
+	var tier := str(GameState.pay_tier().get("label", "fine"))
+	var mood_tex := "mood_fine"
+	var feeling := "You feel good."
+	match tier:
+		"thriving":
+			mood_tex = "mood_happy"
+			feeling = "You feel amazing!"
+		"tired":
+			mood_tex = "mood_tired"
+			feeling = "You're getting tired…"
+		"exhausted":
+			mood_tex = "mood_exhausted"
+			feeling = "You're exhausted!"
+	if _hud_mood != null:
+		_hud_mood.texture = load("res://assets/ui/%s.png" % mood_tex)
+		if tier != _hud_mood_key and _hud_mood_key != "":
+			_hud_mood.pivot_offset = _hud_mood.size * 0.5
+			var mt := _hud_mood.create_tween()
+			mt.tween_property(_hud_mood, "scale", Vector2(1.5, 1.5), 0.12) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			mt.tween_property(_hud_mood, "scale", Vector2.ONE, 0.2) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_hud_mood_key = tier
+	if _card_mood != null:
+		_card_mood.texture = load("res://assets/ui/%s.png" % mood_tex)
+		_card_mood_label.text = feeling
+		_card_heart.value = float(GameState.wellbeing)
+		var foot_fill := StyleBoxFlat.new()
+		foot_fill.set_corner_radius_all(8)
+		foot_fill.bg_color = Color("7fb77f") if GameState.wellbeing >= 60 \
+			else (Color("e7b24c") if GameState.wellbeing >= 30 else Color("e24b4a"))
+		_card_heart.add_theme_stylebox_override("fill", foot_fill)
 	_update_dream_spot()
 	_update_home_badge()
 	_update_string_lights()
@@ -2269,6 +2345,12 @@ func _refresh_hud() -> void:
 
 
 const CARD_TOP := 196.0
+
+func _on_viewport_resized() -> void:
+	_size_card()
+	if _screen_open:
+		_card.position = Vector2(16.0, CARD_TOP)
+
 
 func _size_card() -> void:
 	var vp := get_viewport().get_visible_rect().size
