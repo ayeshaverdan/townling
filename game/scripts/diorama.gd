@@ -16,11 +16,11 @@ const TILE := 1.0  # world units per grid cell
 ## uniform scale, grid cell, purpose blurb. Home is a pitched-roof suburban
 ## house and Shop a commercial storefront with a built-in awning (sister kits).
 const LANDMARKS := [
-	{"name": "Bank", "model": "commercial/building-i", "scale": 0.78, "cell": Vector2i(1, 1),
+	{"name": "Bank", "model": "commercial/building-i", "scale": 0.78, "rot": 180.0, "cell": Vector2i(1, 1),
 		"blurb": "Save your coins in the jar and watch them grow."},
-	{"name": "School", "model": "commercial/building-e", "scale": 0.88, "cell": Vector2i(3, 1),
+	{"name": "School", "model": "commercial/building-e", "scale": 0.88, "rot": 180.0, "cell": Vector2i(3, 1),
 		"blurb": "Take a class to earn a skill star."},
-	{"name": "Workplace", "model": "commercial/building-h", "scale": 1.0, "cell": Vector2i(5, 1),
+	{"name": "Workplace", "model": "commercial/building-h", "scale": 1.0, "rot": 180.0, "cell": Vector2i(5, 1),
 		"blurb": "Work a shift and earn your weekly salary."},
 	{"name": "Home", "model": "suburban/building-type-h", "scale": 0.75, "cell": Vector2i(1, 5),
 		"blurb": "Rest to refill energy, decorate, plan your day."},
