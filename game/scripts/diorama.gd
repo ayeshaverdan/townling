@@ -178,10 +178,6 @@ func _capture_and_quit() -> void:
 		GameState.wallet = 999
 		while not GameState.dream_complete():
 			GameState.fund_dream()
-		GameState.start_new_dream("treehouse")
-		GameState.wallet = 400
-		for i in 12:
-			GameState.fund_dream()
 	elif "--ui6" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -1698,6 +1694,9 @@ func _setup_ui() -> void:
 	hud.offset_left = -340.0
 	hud.offset_right = -20.0
 	hud.offset_top = 16.0
+	# Content wider than the box (long dream labels) must grow LEFT, never
+	# past the right screen edge (default grow direction is rightward).
+	hud.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	hud.add_theme_constant_override("separation", 4)
 	ui.add_child(hud)
 
