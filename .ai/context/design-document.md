@@ -89,6 +89,8 @@ The city grows with the age band, doubling as a progression reward: Band A sees 
 
 **The mentor.** A consistent guide — presented as a warm, slightly quirky figure (a grandparent-like character for Bands B/C; a talking piggy bank for Band A). The mentor's rules: appears *after* consequences, never before; asks reflective questions ("that surprise bill hurt — what could past-you have done?"); delivers the diagnosis after failures; fronts the recovery arcs; and openly tells the kid what the parent can see ("your grown-up gets a postcard about your week"). Reflection is where learning transfers to real life — the mentor is the pedagogical heart of the game.
 
+*Fun-test amendment (July 2026, from kid playtests):* the mentor may additionally ask a **question-form confirmation at the moment of a clearly self-harmful choice** (sleeping without dinner when food was affordable, spending the last dinner-money on the dream/savings, sleeping into unpayable rent). Strict rules: always a question, never a lecture; states the concrete consequence with numbers; **never blocks** — "do it anyway" is always offered, because chosen failure still teaches (§10). This narrows, but does not replace, appears-after-consequences.
+
 **NPCs.** Employers, shopkeepers, quiz-night hosts, neighbors who offer gigs. Functional, light, warm. No romance, no antagonists beyond circumstance. The "villain" of this game is always the situation (the broken phone, the interest rate), never a person.
 
 ---

@@ -79,6 +79,17 @@ var _hud_chapter: Label
 var _lights_built := false
 var _bike_built := false
 
+# The player's little Townling and Aunt Vera on the diorama (design doc §5).
+var _townling: Node3D
+var _mood_sprite: Sprite3D
+var _mood_key := ""
+var _walk_dir := 1.0
+
+# Vera question-form confirmations (never blocking, never before it's chosen).
+var _vera_next: Callable
+var _vera_back := ""
+var _portrait: TextureRect
+
 # Delivery Dash mini-game (spec §3: optional 30-60s shift mini-game).
 var _dash_area: Control
 var _dash_left := 0
@@ -225,6 +236,14 @@ func _capture_and_quit() -> void:
 		# let the lerp settle for the capture
 		for i in 90:
 			_update_city_life(0.1)
+	elif "--ui8" in OS.get_cmdline_args():
+		GameState.autosave = false
+		GameState.init_new()
+		GameState.select_dream("puppy")
+		GameState.day = 7
+		GameState.wallet = 41
+		_current_screen = "Evening"
+		_vera_confirm("Before you sleep: you haven't had dinner — you'll wake up drained — and rent is €60 tonight and you only have €41 — you'll wake up in the red. Sleep anyway?", _do_sleep)
 	elif "--ui4" in OS.get_cmdline_args():
 		GameState.autosave = false
 		GameState.init_new()
@@ -350,6 +369,9 @@ func _build_town() -> void:
 	_spawn("pavement-fountain", FOUNTAIN_CELL)
 	_scatter_confetti()
 	_update_dream_spot()
+
+	_build_townling()
+	_build_vera()
 
 	# Street life: cars drive the two lanes and loop around (design: the town
 	# feels alive; movement is ambient, never interactive).
@@ -633,6 +655,143 @@ func _maybe_debug_overlay() -> void:
 			str(get_viewport().get_visible_rect().size),
 			str(DisplayServer.window_get_size()), str(js)]
 	)
+
+
+# --- The little Townling + Aunt Vera (design doc §5 characters) ---------------
+
+func _mini_person(shirt: Color, skin: Color) -> Node3D:
+	var root := Node3D.new()
+	var body := MeshInstance3D.new()
+	var cap := CapsuleMesh.new()
+	cap.radius = 0.055
+	cap.height = 0.19
+	body.mesh = cap
+	var bmat := StandardMaterial3D.new()
+	bmat.albedo_color = shirt
+	bmat.roughness = 0.9
+	body.material_override = bmat
+	body.position = Vector3(0, 0.115, 0)
+	root.add_child(body)
+	var head := MeshInstance3D.new()
+	var hm := SphereMesh.new()
+	hm.radius = 0.055
+	hm.height = 0.11
+	head.mesh = hm
+	var hmat := StandardMaterial3D.new()
+	hmat.albedo_color = skin
+	hmat.roughness = 0.9
+	head.material_override = hmat
+	head.position = Vector3(0, 0.26, 0)
+	root.add_child(head)
+	return root
+
+
+func _build_townling() -> void:
+	_townling = _mini_person(Color("7fb77f"), Color("eecfb3"))
+	_townling.position = Vector3(2.0, GROUND_Y, 4.4)
+	world.add_child(_townling)
+	# a little gold cap
+	var cap := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.05
+	cm.bottom_radius = 0.062
+	cm.height = 0.035
+	cap.mesh = cm
+	var cmat := StandardMaterial3D.new()
+	cmat.albedo_color = Color("e7b24c")
+	cap.material_override = cmat
+	cap.position = Vector3(0, 0.315, 0)
+	_townling.add_child(cap)
+	# the mood bubble floats overhead
+	_mood_sprite = Sprite3D.new()
+	_mood_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_mood_sprite.pixel_size = 0.004
+	_mood_sprite.position = Vector3(0, 0.62, 0)
+	_mood_sprite.no_depth_test = true
+	_townling.add_child(_mood_sprite)
+	_update_mood()
+
+
+func _build_vera() -> void:
+	var vera := _mini_person(Color("c9aee4"), Color("eecfb3"))
+	vera.position = Vector3(4.35, GROUND_Y, 4.55)
+	vera.rotation.y = deg_to_rad(-35.0)
+	world.add_child(vera)
+	# grey bun
+	var bun := MeshInstance3D.new()
+	var bm := SphereMesh.new()
+	bm.radius = 0.032
+	bm.height = 0.064
+	bun.mesh = bm
+	var gmat := StandardMaterial3D.new()
+	gmat.albedo_color = Color("c8c6c4")
+	bun.material_override = gmat
+	bun.position = Vector3(0, 0.33, -0.02)
+	vera.add_child(bun)
+	# the parrot (docs: retired banker WITH a parrot)
+	var parrot := MeshInstance3D.new()
+	var pm := SphereMesh.new()
+	pm.radius = 0.028
+	pm.height = 0.07
+	parrot.mesh = pm
+	var pmat := StandardMaterial3D.new()
+	pmat.albedo_color = Color("6ebe6e")
+	parrot.material_override = pmat
+	parrot.position = Vector3(0.085, 0.24, 0.0)
+	vera.add_child(parrot)
+	var tag := Label3D.new()
+	tag.text = "Aunt Vera"
+	tag.font = _font
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.pixel_size = 0.0028
+	tag.font_size = 30
+	tag.modulate = Color("6d5a8a")
+	tag.outline_size = 8
+	tag.outline_modulate = Color(1, 1, 1, 0.9)
+	tag.position = Vector3(0, 0.55, 0)
+	vera.add_child(tag)
+
+
+## The Townling wanders the south sidewalk; pace and posture follow wellbeing.
+func _update_townling(delta: float) -> void:
+	if _townling == null:
+		return
+	var wb: int = GameState.wellbeing
+	var speed := 0.32
+	if wb < 30:
+		speed = 0.08
+	elif wb < 60:
+		speed = 0.18
+	_townling.position.x += speed * _walk_dir * delta
+	if _townling.position.x > 4.9:
+		_walk_dir = -1.0
+	elif _townling.position.x < 1.1:
+		_walk_dir = 1.0
+	_townling.rotation.y = deg_to_rad(90.0 if _walk_dir > 0.0 else -90.0)
+	# a bouncy step when well, a weary shuffle when not
+	var t := Time.get_ticks_msec() / 1000.0
+	var hop := 0.02 + 0.02 * (float(wb) / 100.0)
+	_townling.position.y = GROUND_Y + absf(sin(t * (2.0 + 3.0 * float(wb) / 100.0))) * hop
+	_townling.rotation.z = deg_to_rad(-8.0) if wb < 30 else 0.0
+	_update_mood()
+
+
+func _update_mood() -> void:
+	if _mood_sprite == null:
+		return
+	var key := str(GameState.pay_tier().get("label", "fine"))
+	if key == _mood_key:
+		return
+	_mood_key = key
+	var tex_name := "mood_fine"
+	match key:
+		"thriving":
+			tex_name = "mood_happy"
+		"tired":
+			tex_name = "mood_tired"
+		"exhausted":
+			tex_name = "mood_exhausted"
+	_mood_sprite.texture = load("res://assets/ui/%s.png" % tex_name)
 
 
 # --- Feedback FX (design doc §13: money animates into/out of the wallet) -----
@@ -981,6 +1140,44 @@ func _open_chapter_result() -> void:
 func _after_chapter_result() -> void:
 	_current_screen = "Evening"
 	_open_evening()
+
+
+## Aunt Vera asks a question before clearly self-harmful choices — question-
+## form, never blocking, never a lecture (design doc §5 mentor voice; fun-test
+## amendment: she may ASK before, the lesson still comes after).
+func _vera_confirm(message: String, on_confirm: Callable) -> void:
+	_vera_back = _current_screen
+	_vera_next = on_confirm
+	_current_screen = "Vera"
+	_screen_title.text = "Aunt Vera wonders…"
+	_screen_body.text = message + "\n\n— Aunt Vera"
+	_build_actions()
+	if not _screen_open:
+		_show_card()
+
+
+func _vera_cancel() -> void:
+	_vera_next = Callable()
+	var back := _vera_back
+	_vera_back = ""
+	match back:
+		"Evening":
+			_current_screen = "Evening"
+			_open_evening()
+		"Home", "Bank":
+			_current_screen = back
+			_screen_title.text = back
+			_screen_body.text = _blurb_for(back)
+			_build_actions()
+		_:
+			_close_screen()
+
+
+func _blurb_for(name: String) -> String:
+	for lm in LANDMARKS:
+		if lm["name"] == name:
+			return lm["blurb"]
+	return ""
 
 
 ## The Delivery Dash: tap all parcels, fast = bigger tip (spec §3).
@@ -1632,13 +1829,27 @@ func _build_actions() -> void:
 				evb.pressed.connect(_open_event)
 			else:
 				var s := _action_button("Sleep  💤  ·  start day %d" % (GameState.day + 1))
-				s.pressed.connect(_do_sleep)
+				s.pressed.connect(_sleep_pressed)
 		"RestDay":
 			var ok := _action_button("Okay, I'll rest…")
 			ok.pressed.connect(_close_screen)
 		"Promotion":
 			var yay := _action_button("YES! Back to work!")
 			yay.pressed.connect(_close_screen)
+		"Vera":
+			var go_b := _action_button("Do it anyway")
+			go_b.pressed.connect(func() -> void:
+				var act := _vera_next
+				var back := _vera_back
+				_vera_next = Callable()
+				_vera_back = ""
+				_current_screen = back
+				_screen_title.text = back
+				_screen_body.text = _blurb_for(back)
+				act.call()
+			)
+			var think := _action_button("Hmm, let me think…")
+			think.pressed.connect(_vera_cancel)
 		"Event":
 			var card: Dictionary = GameState.tonight_event()
 			if card.is_empty():
@@ -1682,6 +1893,10 @@ func _build_actions() -> void:
 			cb2.pressed.connect(_after_chapter_result)
 		_:
 			_screen_body.text += "\n\n(coming soon)"
+	# Aunt Vera's portrait appears on every card she speaks through.
+	if _portrait != null:
+		_portrait.visible = _current_screen in ["Vera", "RestDay", "Chapter", "ChapterResult"] \
+			or (_current_screen == "Dream" and GameState.dream_complete())
 	# Must-answer screens have no escape hatch (dream pick, live event).
 	if _close_btn != null:
 		var must_answer := (
@@ -1714,6 +1929,14 @@ func _pick_dream(id: String) -> void:
 
 
 func _do_fund_dream() -> void:
+	var cheapest := int(GameState.econ.get("groceries", [])[0].get("cost", 20))
+	var step: int = mini(int(GameState.econ.get("dream_step", 25)),
+		GameState.dream_cost() - GameState.dream_saved)
+	if GameState.groceries_today == "" and GameState.wallet >= cheapest \
+			and GameState.wallet - step < cheapest and _current_screen != "Vera":
+		_vera_confirm("That €%d is your dinner money, sweetheart. Dreams grow faster on a full tummy — still add it to the jar?" % step,
+			_do_fund_dream)
+		return
 	var r: Dictionary = GameState.fund_dream()
 	if r.is_empty():
 		return
@@ -1768,6 +1991,13 @@ func _do_rest() -> void:
 
 
 func _do_bank(amount: int, into_savings: bool) -> void:
+	var cheapest := int(GameState.econ.get("groceries", [])[0].get("cost", 20))
+	if into_savings and GameState.groceries_today == "" \
+			and GameState.wallet >= cheapest and GameState.wallet - amount < cheapest \
+			and _current_screen != "Vera":
+		_vera_confirm("Saving is wonderful — but that's your dinner money. Put it in the jar anyway?",
+			func() -> void: _do_bank(amount, into_savings))
+		return
 	var ok := GameState.deposit(amount) if into_savings else GameState.withdraw(amount)
 	if not ok:
 		return
@@ -1776,6 +2006,19 @@ func _do_bank(amount: int, into_savings: bool) -> void:
 	_screen_body.text = "Your coins are safe in the jar." if into_savings \
 		else "Coins back in your pocket."
 	_build_actions()
+
+
+func _sleep_pressed() -> void:
+	var warnings: Array[String] = []
+	if GameState.groceries_today == "":
+		warnings.append("you haven't had dinner — you'll wake up drained")
+	if GameState.rent_due_tonight() and GameState.wallet < GameState.rent_amount():
+		warnings.append("rent is €%d tonight and you only have €%d — you'll wake up in the red" % [
+			GameState.rent_amount(), GameState.wallet])
+	if warnings.size() > 0 and _current_screen != "Vera":
+		_vera_confirm("Before you sleep: %s. Sleep anyway?" % " — and ".join(warnings), _do_sleep)
+		return
+	_do_sleep()
 
 
 func _do_sleep() -> void:
@@ -1834,6 +2077,14 @@ func _setup_ui() -> void:
 
 	var header := HBoxContainer.new()
 	col.add_child(header)
+
+	_portrait = TextureRect.new()
+	_portrait.texture = load("res://assets/ui/vera.png")
+	_portrait.custom_minimum_size = Vector2(72, 72)
+	_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_portrait.visible = false
+	header.add_child(_portrait)
 
 	_screen_title = Label.new()
 	_screen_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1968,6 +2219,7 @@ func _process(delta: float) -> void:
 		_cam_dist = lerpf(_cam_dist, _cam_dist_target, w)
 		_apply_camera()
 	_update_city_life(delta)
+	_update_townling(delta)
 	if _hud_heart_icon == null:
 		return
 	if GameState.wellbeing < 30:
