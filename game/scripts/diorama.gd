@@ -124,6 +124,7 @@ func _ready() -> void:
 	_setup_ui()
 	GameState.changed.connect(_refresh_hud)
 	_refresh_hud()
+	_maybe_debug_overlay()
 
 	if "--shot" in OS.get_cmdline_args():
 		_capture_and_quit()
@@ -597,6 +598,39 @@ func _decorate_notice_board(origin: Vector3) -> void:
 		note.position = Vector3(n["x"], n["y"], 0.025)
 		note.rotation.z = deg_to_rad(n["r"])
 		root.add_child(note)
+
+
+## Open http://.../?debug for live layout metrics (build tag + viewport math).
+func _maybe_debug_overlay() -> void:
+	if not OS.has_feature("web"):
+		return
+	var search: Variant = JavaScriptBridge.eval("window.location.search", true)
+	if typeof(search) != TYPE_STRING or not ("debug" in str(search)):
+		return
+	var dbg := Label.new()
+	dbg.name = "DebugOverlay"
+	dbg.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	dbg.offset_left = 12.0
+	dbg.offset_top = -170.0
+	dbg.add_theme_font_size_override("font_size", 16)
+	dbg.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1))
+	($UI as CanvasLayer).add_child(dbg)
+	var t := Timer.new()
+	t.wait_time = 1.0
+	t.autostart = true
+	add_child(t)
+	t.timeout.connect(func() -> void:
+		var js: Variant = JavaScriptBridge.eval(
+			"JSON.stringify({iw:window.innerWidth,ih:window.innerHeight," +
+			"dpr:window.devicePixelRatio," +
+			"vvs:(window.visualViewport?window.visualViewport.scale:-1)," +
+			"vvw:(window.visualViewport?window.visualViewport.width:-1)," +
+			"cw:(document.getElementById('canvas')?document.getElementById('canvas').getBoundingClientRect().width:-1)})",
+			true)
+		dbg.text = "BUILD camfix3\nvisible_rect=%s\nwindow=%s\n%s" % [
+			str(get_viewport().get_visible_rect().size),
+			str(DisplayServer.window_get_size()), str(js)]
+	)
 
 
 # --- Feedback FX (design doc §13: money animates into/out of the wallet) -----
