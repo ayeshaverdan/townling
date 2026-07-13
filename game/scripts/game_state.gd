@@ -26,6 +26,9 @@ var earned_today: int = 0
 var spent_today: int = 0
 var groceries_today: String = ""  # grocery tier id bought today ("" = none)
 var shifts_today: int = 0         # the job is once daily; gigs are the extra
+var xp: int = 0                   # 10 per shift; gates the courier ranks
+var promotion_pending: String = ""  # rank just reached — announced next morning
+var owned_assets: Array = []      # capability assets (design doc §8): ids
 var wellbeing: int = 70           # 0-100 (spec §9); low wellbeing reduces pay
 var dream_id: String = ""         # the dream (design doc §8) — "" until chosen
 var dream_saved: int = 0          # coins put toward the dream so far
@@ -111,6 +114,9 @@ func init_new() -> void:
 	spent_today = 0
 	groceries_today = ""
 	shifts_today = 0
+	xp = 0
+	promotion_pending = ""
+	owned_assets = []
 	wellbeing = int(_wb().get("start", 70))
 	dream_id = ""
 	dream_saved = 0
@@ -136,20 +142,41 @@ func init_new() -> void:
 
 # --- Slot actions -----------------------------------------------------------
 
-## Work a Courier shift: one slot, instant pay + tip (spec §2 day-1 values).
-func work_shift() -> Dictionary:
+## Work a Courier shift: one slot, instant rank pay (+optional dash tip),
+## +XP toward the next rank (spec §5-§6, fun-test courier ladder).
+func work_shift(dash_tip: int = 0) -> Dictionary:
 	if slots_left <= 0 or not can_work_today():
 		return {}
 	var preview := shift_pay_preview()
-	var amount := int(preview.get("amount", 0))
+	var amount := int(preview.get("amount", 0)) + dash_tip
 	shifts_today += 1
 	slots_left -= 1
 	wallet += amount
 	earned_today += amount
 	_log("Courier shift", amount)
+	var next_before := next_rank()
+	xp += int(econ.get("courier_shift", {}).get("xp", 10))
+	if not next_before.is_empty() and xp >= int(next_before.get("xp", 999999)):
+		promotion_pending = str(next_before.get("name", ""))
 	_after_change()
 	return {"amount": amount, "tier": preview.get("tier", "fine"),
-		"bonus": preview.get("bonus", 0)}
+		"bonus": preview.get("bonus", 0), "dash_tip": dash_tip,
+		"xp": xp, "promoted": promotion_pending != ""}
+
+
+func current_rank() -> Dictionary:
+	var best: Dictionary = {}
+	for r in econ.get("courier_ranks", []):
+		if xp >= int(r.get("xp", 0)):
+			best = r
+	return best if not best.is_empty() else {"name": "Junior", "xp": 0, "pay": 28}
+
+
+func next_rank() -> Dictionary:
+	for r in econ.get("courier_ranks", []):
+		if xp < int(r.get("xp", 0)):
+			return r
+	return {}
 
 
 ## What a shift pays RIGHT NOW, given wellbeing (spec §9 pay tiers,
@@ -161,8 +188,7 @@ func can_work_today() -> bool:
 
 
 func shift_pay_preview() -> Dictionary:
-	var shift: Dictionary = econ.get("courier_shift", {})
-	var base := int(shift.get("pay", 24)) + int(shift.get("tip", 4))
+	var base := int(current_rank().get("pay", 28))
 	var tier := pay_tier()
 	var amount := int(base * float(tier.get("mult", 1.0))) + int(tier.get("bonus", 0))
 	return {"amount": amount, "tier": tier.get("label", "fine"),
@@ -225,6 +251,39 @@ func withdraw(amount: int) -> bool:
 	_log("From savings jar", amount)
 	_after_change()
 	return true
+
+
+# --- Capability assets (design doc §8: purchases that change the game) --------
+
+func asset_def(id: String) -> Dictionary:
+	for a in econ.get("assets", []):
+		if a.get("id", "") == id:
+			return a
+	return {}
+
+
+func has_asset(id: String) -> bool:
+	return owned_assets.has(id)
+
+
+## Buying an asset is a shopping trip: one slot, and it changes the rules.
+func buy_asset(id: String) -> Dictionary:
+	if slots_left <= 0 or has_asset(id):
+		return {}
+	var a := asset_def(id)
+	if a.is_empty():
+		return {}
+	var cost := int(a.get("cost", 0))
+	if wallet < cost:
+		return {}
+	slots_left -= 1
+	wallet -= cost
+	spent_today += cost
+	owned_assets.append(id)
+	_log(str(a.get("label", id)), -cost)
+	roll_gigs()  # the bike adds an offer immediately, felt on the spot
+	_after_change()
+	return {"label": a.get("label", id), "cost": cost}
 
 
 # --- The dream (design doc §8: the reason to earn) ----------------------------
@@ -422,6 +481,8 @@ func roll_gigs() -> void:
 	if pool.is_empty():
 		return
 	var count := rng.randi_range(int(gigs_cfg.get("daily_min", 1)), int(gigs_cfg.get("daily_max", 3)))
+	if has_asset("bike"):
+		count += 1  # spec §8: the bike earns its keep — one extra offer daily
 	var ids: Array = []
 	for g in pool:
 		ids.append(g.get("id", ""))
@@ -616,7 +677,8 @@ func save_game() -> void:
 		"wallet": wallet, "savings": savings, "day": day,
 		"slots_left": slots_left, "earned_today": earned_today,
 		"spent_today": spent_today, "groceries_today": groceries_today,
-		"shifts_today": shifts_today,
+		"shifts_today": shifts_today, "xp": xp,
+		"promotion_pending": promotion_pending, "owned_assets": owned_assets,
 		"wellbeing": wellbeing, "dream_id": dream_id, "dream_saved": dream_saved,
 		"dream_start_day": dream_start_day, "completed_dreams": completed_dreams,
 		"zero_days": zero_days, "forced_rest_today": forced_rest_today,
@@ -648,6 +710,9 @@ func load_game() -> bool:
 	spent_today = int(parsed.get("spent_today", 0))
 	groceries_today = str(parsed.get("groceries_today", ""))
 	shifts_today = int(parsed.get("shifts_today", 0))
+	xp = int(parsed.get("xp", 0))
+	promotion_pending = str(parsed.get("promotion_pending", ""))
+	owned_assets = parsed.get("owned_assets", [])
 	wellbeing = int(parsed.get("wellbeing", 70))
 	dream_id = str(parsed.get("dream_id", ""))
 	dream_saved = int(parsed.get("dream_saved", 0))

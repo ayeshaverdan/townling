@@ -77,6 +77,12 @@ var _hud_dream_label: Label
 var _hud_dream_bar: ProgressBar
 var _hud_chapter: Label
 var _lights_built := false
+var _bike_built := false
+
+# Delivery Dash mini-game (spec §3: optional 30-60s shift mini-game).
+var _dash_area: Control
+var _dash_left := 0
+var _dash_t0 := 0
 
 var _dream_spot: Node3D
 var _dream_group: Node3D
@@ -977,6 +983,108 @@ func _after_chapter_result() -> void:
 	_open_evening()
 
 
+## The Delivery Dash: tap all parcels, fast = bigger tip (spec §3).
+func _start_dash() -> void:
+	if GameState.slots_left <= 0 or not GameState.can_work_today():
+		return
+	_current_screen = "Dash"
+	_screen_title.text = "Delivery Dash!"
+	var dash_cfg: Dictionary = GameState.econ.get("dash", {})
+	_screen_body.text = "Tap all %d parcels — deliver them FAST for a bigger tip!" % int(dash_cfg.get("parcels", 8))
+	for child in _actions.get_children():
+		child.queue_free()
+	_dash_area = Control.new()
+	_dash_area.custom_minimum_size = Vector2(0, 640)
+	_actions.add_child(_dash_area)
+	_dash_left = int(dash_cfg.get("parcels", 8))
+	_dash_t0 = 0
+	_spawn_parcel.call_deferred()
+	if _close_btn != null:
+		_close_btn.visible = true
+
+
+func _spawn_parcel() -> void:
+	if _dash_area == null or not is_instance_valid(_dash_area):
+		return
+	var parcel := Button.new()
+	parcel.icon = load("res://assets/ui/parcel.png")
+	parcel.flat = true
+	parcel.expand_icon = true
+	parcel.custom_minimum_size = Vector2(104, 104)
+	var area: Vector2 = _dash_area.size
+	if area.x < 140.0:
+		area = Vector2(_card.size.x - 60.0, 640.0)
+	parcel.position = Vector2(
+		randf_range(0.0, maxf(1.0, area.x - 110.0)),
+		randf_range(0.0, maxf(1.0, area.y - 110.0)))
+	parcel.pressed.connect(func() -> void:
+		if _dash_t0 == 0:
+			_dash_t0 = Time.get_ticks_msec()
+		parcel.queue_free()
+		_dash_left -= 1
+		Sfx.play("assets/kenney/sounds/toggle.ogg", -16.0)
+		if _dash_left > 0:
+			_spawn_parcel()
+		else:
+			_finish_dash()
+	)
+	_dash_area.add_child(parcel)
+	if _dash_t0 == 0:
+		_dash_t0 = Time.get_ticks_msec()
+
+
+func _finish_dash() -> void:
+	var elapsed := Time.get_ticks_msec() - _dash_t0
+	var dash_cfg: Dictionary = GameState.econ.get("dash", {})
+	var tip := 0
+	var verdict := "Deliveries done — steady work."
+	if elapsed <= int(dash_cfg.get("great_ms", 15000)):
+		tip = int(dash_cfg.get("tip_great", 8))
+		verdict = "LIGHTNING FAST! Customers are amazed."
+	elif elapsed <= int(dash_cfg.get("good_ms", 25000)):
+		tip = int(dash_cfg.get("tip_good", 4))
+		verdict = "Quick and friendly — nice round!"
+	var r: Dictionary = GameState.work_shift(tip)
+	if r.is_empty():
+		return
+	_current_screen = "Workplace"
+	_screen_title.text = "Workplace"
+	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(int(r.get("amount", 0)))
+	var secs := elapsed / 1000.0
+	_screen_body.text = "%s\n\n%.1f seconds  →  +€%d" % [verdict, secs, r["amount"]]
+	if tip > 0:
+		_screen_body.text += "  (including a €%d speed tip!)" % tip
+	_screen_body.text += "\n+10 XP"
+	if r.get("promoted", false):
+		_screen_body.text += "\n\nSomething arrived in the mail… see you tomorrow morning!"
+	_build_actions()
+
+
+func _do_buy_bike() -> void:
+	var r: Dictionary = GameState.buy_asset("bike")
+	if r.is_empty():
+		return
+	Sfx.play(SND_OPEN, -10.0)
+	_money_fx(-int(r.get("cost", 0)))
+	_screen_body.text = "Your very own bike! From tomorrow the Notice Board has an extra gig every day — it pays for itself before long."
+	_build_actions()
+
+
+## Promotion letter (spec §5: promotions arrive as letters, a ritual moment).
+func _open_promotion() -> void:
+	var rank := GameState.promotion_pending
+	GameState.promotion_pending = ""
+	GameState.save_game()
+	_current_screen = "Promotion"
+	_screen_title.text = "A letter for you!"
+	_screen_body.text = "Dear Courier,\n\nWord around town is that you're FAST and reliable. From today, you are a %s Courier — shifts now pay €%d.\n\nKeep it up!\n— Townling Deliveries" % [
+		rank, int(GameState.current_rank().get("pay", 0))]
+	_build_actions()
+	if not _screen_open:
+		_show_card()
+
+
 ## Spec §9: the mentor-ordered Rest Day card (Aunt Vera's first cameo).
 func _open_rest_day() -> void:
 	_current_screen = "RestDay"
@@ -987,6 +1095,48 @@ func _open_rest_day() -> void:
 	_screen_body.text = "You ran yourself completely empty two days in a row, so today you rest. No work, no errands.\n\nThat's about €%d of pay you WON'T earn today. Dinner and sleep are cheaper than exhaustion!\n\n(Wellbeing +40)\n\n— Aunt Vera" % missed
 	_build_actions()
 	_show_card()
+
+
+## The bike leans by the Home fence once owned (the diorama shows progress).
+func _update_bike_prop() -> void:
+	if _bike_built or not GameState.has_asset("bike"):
+		return
+	_bike_built = true
+	var root := Node3D.new()
+	root.position = Vector3(1.42, GROUND_Y, 5.35)
+	root.rotation.y = deg_to_rad(30.0)
+	world.add_child(root)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color("d9662e")
+	mat.roughness = 0.7
+	for wx in [-0.11, 0.11]:
+		var wheel := MeshInstance3D.new()
+		var wm := CylinderMesh.new()
+		wm.top_radius = 0.055
+		wm.bottom_radius = 0.055
+		wm.height = 0.02
+		wheel.mesh = wm
+		wheel.rotation.z = deg_to_rad(90.0)
+		wheel.position = Vector3(wx, 0.055, 0.0)
+		var wmat := StandardMaterial3D.new()
+		wmat.albedo_color = Color("3b4048")
+		wheel.material_override = wmat
+		root.add_child(wheel)
+	var frame := MeshInstance3D.new()
+	var fm := BoxMesh.new()
+	fm.size = Vector3(0.2, 0.03, 0.015)
+	frame.mesh = fm
+	frame.material_override = mat
+	frame.position = Vector3(0.0, 0.09, 0.0)
+	frame.rotation.z = deg_to_rad(12.0)
+	root.add_child(frame)
+	var bar := MeshInstance3D.new()
+	var bm2 := BoxMesh.new()
+	bm2.size = Vector3(0.015, 0.09, 0.015)
+	bar.mesh = bm2
+	bar.material_override = mat
+	bar.position = Vector3(0.1, 0.13, 0.0)
+	root.add_child(bar)
 
 
 ## Chapter 1 trophy: string lights over the fountain plaza, forever.
@@ -1392,6 +1542,14 @@ func _build_actions() -> void:
 				var go := _action_button("Let's go!")
 				go.pressed.connect(_close_screen)
 		"Workplace":
+			var rank: Dictionary = GameState.current_rank()
+			var nxt: Dictionary = GameState.next_rank()
+			_screen_body.text += "\n\nRank:  %s Courier  ·  %d XP" % [rank.get("name", "?"), GameState.xp]
+			if nxt.is_empty():
+				_screen_body.text += "\nTop rank — the whole town knows your name!"
+			else:
+				_screen_body.text += "\nNext:  %s at %d XP  →  shifts pay €%d" % [
+					nxt.get("name", "?"), int(nxt.get("xp", 0)), int(nxt.get("pay", 0))]
 			if not GameState.can_work_today():
 				_screen_body.text += "\n\nToday's shift is done — nice work! Extra coins? Check the Notice Board for gigs."
 			var preview: Dictionary = GameState.shift_pay_preview()
@@ -1402,8 +1560,13 @@ func _build_actions() -> void:
 					_screen_body.text += "\n\nYou're tired — shifts pay less until you rest."
 				"exhausted":
 					_screen_body.text += "\n\nYou're exhausted! Rest and a good dinner will fix your pay."
-			var b := _action_button("Work a shift  ·  1 slot  ·  +€%d" % int(preview.get("amount", 0)))
-			b.disabled = GameState.slots_left <= 0 or not GameState.can_work_today()
+			var can_shift := GameState.slots_left > 0 and GameState.can_work_today()
+			var dash_cfg: Dictionary = GameState.econ.get("dash", {})
+			var db2 := _action_button("DELIVERY DASH  ·  1 slot  ·  tips up to +€%d!" % int(dash_cfg.get("tip_great", 8)))
+			db2.disabled = not can_shift
+			db2.pressed.connect(_start_dash)
+			var b := _action_button("Just work  ·  1 slot  ·  +€%d" % int(preview.get("amount", 0)))
+			b.disabled = not can_shift
 			b.pressed.connect(_do_shift)
 		"Shop":
 			for tier in GameState.econ.get("groceries", []):
@@ -1416,6 +1579,12 @@ func _build_actions() -> void:
 				)
 				var tid: String = tier.get("id", "")
 				gb.pressed.connect(func() -> void: _do_groceries(tid))
+			if not GameState.has_asset("bike"):
+				var bike: Dictionary = GameState.asset_def("bike")
+				var bb := _action_button("Buy the %s  ·  1 slot  ·  −€%d  ·  %s" % [
+					bike.get("label", "Bike"), int(bike.get("cost", 80)), bike.get("effect", "")])
+				bb.disabled = GameState.slots_left <= 0 or GameState.wallet < int(bike.get("cost", 80))
+				bb.pressed.connect(_do_buy_bike)
 			if GameState.groceries_today != "":
 				_screen_body.text += "\n\nYou already shopped today."
 		"Home":
@@ -1467,6 +1636,9 @@ func _build_actions() -> void:
 		"RestDay":
 			var ok := _action_button("Okay, I'll rest…")
 			ok.pressed.connect(_close_screen)
+		"Promotion":
+			var yay := _action_button("YES! Back to work!")
+			yay.pressed.connect(_close_screen)
 		"Event":
 			var card: Dictionary = GameState.tonight_event()
 			if card.is_empty():
@@ -1524,6 +1696,9 @@ func _action_button(text: String) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 72)
 	b.add_theme_font_size_override("font_size", 28)
+	# Long labels must never widen the card (same bug class as the HUD
+	# overflow): clip inside the button instead.
+	b.clip_text = true
 	_actions.add_child(b)
 	return b
 
@@ -1608,6 +1783,8 @@ func _do_sleep() -> void:
 	_close_screen()
 	if GameState.forced_rest_today:
 		_open_rest_day.call_deferred()
+	elif GameState.promotion_pending != "":
+		_open_promotion.call_deferred()
 	elif GameState.ch1_announce_pending:
 		GameState.ch1_announce_pending = false
 		GameState.save_game()
@@ -1836,6 +2013,7 @@ func _refresh_hud() -> void:
 	_update_dream_spot()
 	_update_home_badge()
 	_update_string_lights()
+	_update_bike_prop()
 
 
 const CARD_TOP := 196.0

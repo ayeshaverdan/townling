@@ -3,9 +3,8 @@
 	"starter_wallet": 50,
 	"slots_per_day": 3,
 	"courier_shift": {
-		"pay": 24,
-		"tip": 4,
-		"per_day": 1
+		"per_day": 1,
+		"xp": 10
 	},
 	"groceries": [
 		{
@@ -93,5 +92,37 @@
 		"duration": 14,
 		"ticket": 100,
 		"retry_days": 21
-	}
+	},
+	"courier_ranks": [
+		{
+			"name": "Junior",
+			"xp": 0,
+			"pay": 28
+		},
+		{
+			"name": "Senior",
+			"xp": 100,
+			"pay": 34
+		},
+		{
+			"name": "Expert",
+			"xp": 300,
+			"pay": 42
+		}
+	],
+	"dash": {
+		"parcels": 8,
+		"great_ms": 15000,
+		"good_ms": 25000,
+		"tip_great": 8,
+		"tip_good": 4
+	},
+	"assets": [
+		{
+			"id": "bike",
+			"label": "Bike",
+			"cost": 80,
+			"effect": "+1 gig offer every day"
+		}
+	]
 }

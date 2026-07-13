@@ -275,6 +275,44 @@ func _init() -> void:
 	check(gs.tonight_event_id == "phone_broken", "deferred fires when due")
 	check(gs.last_shock_day == 6, "deferred resets the shock clock")
 
+	# Ranks & XP: shifts accrue XP; crossing a threshold queues a promotion.
+	gs.init_new()
+	check(str(gs.current_rank().get("name")) == "Junior", "starts Junior")
+	check(gs.shift_pay_preview().get("amount") == 28, "Junior pays €28")
+	var r1: Dictionary = gs.work_shift()
+	check(gs.xp == 10, "shift grants 10 XP")
+	check(not r1.get("promoted", true), "no promotion yet")
+	gs.xp = 90
+	gs.end_day()
+	gs.wellbeing = 70  # keep the pay-tier neutral for rank assertions
+	var r2: Dictionary = gs.work_shift()
+	check(r2.get("promoted", false), "crossing 100 XP promotes")
+	check(gs.promotion_pending == "Senior", "Senior queued for morning")
+	check(str(gs.current_rank().get("name")) == "Senior", "rank is Senior")
+	check(gs.shift_pay_preview().get("amount") == 34, "Senior pays €34")
+	check(str(gs.next_rank().get("name")) == "Expert", "ladder shows Expert next")
+
+	# Dash tip rides on top of rank pay.
+	gs.end_day()
+	gs.wellbeing = 70
+	var r3: Dictionary = gs.work_shift(8)
+	check(r3.get("amount") == 42, "dash: 34 + 8 tip")
+
+	# The bike: one slot, -€80, +1 gig offer daily, no rebuy.
+	gs.init_new()
+	gs.wallet = 100
+	var b: Dictionary = gs.buy_asset("bike")
+	check(b.get("cost") == 80 and gs.wallet == 20, "bike costs €80")
+	check(gs.has_asset("bike"), "bike owned")
+	check(gs.slots_left == 2, "bike trip used a slot")
+	check(gs.buy_asset("bike").is_empty(), "no second bike")
+	var sizes_ok := true
+	for i in 12:
+		gs.roll_gigs()
+		if gs.gigs_today.size() < 2 or gs.gigs_today.size() > 4:
+			sizes_ok = false
+	check(sizes_ok, "bike adds +1 offer (2-4 daily)")
+
 	if failures == 0:
 		print("ALL TESTS PASSED")
 		quit(0)
